@@ -115,6 +115,17 @@
 
             console.log(`[猎聘助手] ${msg}`);
 
+            // 详情页模式：写入共享存储，供列表页读取显示
+            if (state.isDetailPage) {
+                const sharedLogs = GM_getValue('lp_shared_logs', []);
+                sharedLogs.push({ formattedMsg, color: levelInfo.color, time: Date.now() });
+                // 保留最近50条
+                if (sharedLogs.length > 50) sharedLogs.shift();
+                GM_setValue('lp_shared_logs', sharedLogs);
+                return;
+            }
+
+            // 列表页模式：直接写入UI浮窗
             if (UI && UI.logContainer) {
                 const div = document.createElement('div');
                 div.style.cssText = `
@@ -818,10 +829,10 @@
             };
             GM_setValue(CONFIG.STORAGE_KEYS.CURRENT_TASK, JSON.stringify(task));
 
-            // 打开页面
-            const win = window.open(jobInfo.link, '_blank');
+            // 后台打开页面（不切换焦点）
+            const win = GM_openInTab(jobInfo.link, { active: false, insert: true, setParent: true });
             if (!win) {
-                Core.log("无法打开新窗口，可能被浏览器拦截");
+                Core.log("无法打开新窗口，可能被浏览器拦截", 'ERROR');
                 return;
             }
 
@@ -859,15 +870,42 @@
         },
 
         async waitForTaskResult(url, winHandle) {
+            let lastLogTime = 0; // 记录上次读取的日志时间
+
             return new Promise(resolve => {
                 let checks = 0;
                 const maxChecks = 30; // 30秒超时
 
                 const timer = setInterval(() => {
                     checks++;
+
+                    // 读取并显示详情页的共享日志
+                    const sharedLogs = GM_getValue('lp_shared_logs', []);
+                    sharedLogs.forEach(log => {
+                        if (log.time > lastLogTime) {
+                            // 显示新日志
+                            if (UI && UI.logContainer) {
+                                const div = document.createElement('div');
+                                div.style.cssText = `
+                                    padding: 4px 8px;
+                                    color: ${log.color};
+                                    border-bottom: 1px solid #f0f0f0;
+                                    font-size: 12px;
+                                    line-height: 1.5;
+                                    margin-bottom: 2px;
+                                `;
+                                div.textContent = log.formattedMsg;
+                                UI.logContainer.appendChild(div);
+                                UI.logContainer.scrollTop = UI.logContainer.scrollHeight;
+                            }
+                            lastLogTime = log.time;
+                        }
+                    });
+
                     // 检查窗口是否已关闭
                     if (winHandle.closed) {
                         clearInterval(timer);
+                        GM_setValue('lp_shared_logs', []); // 清空共享日志
                         resolve('closed');
                         return;
                     }
@@ -880,6 +918,7 @@
                         const normalize = u => u.split('?')[0];
                         if (normalize(task.url) === normalize(url) && task.status !== 'pending') {
                             clearInterval(timer);
+                            GM_setValue('lp_shared_logs', []); // 清空共享日志
                             resolve(task.status);
                             return;
                         }
@@ -888,6 +927,7 @@
                     if (checks >= maxChecks) {
                         clearInterval(timer);
                         winHandle.close();
+                        GM_setValue('lp_shared_logs', []); // 清空共享日志
                         resolve('timeout');
                     }
                 }, 1000);
@@ -930,8 +970,8 @@
      */
     const DetailManager = {
         init() {
-            // 创建详情页日志浮窗
-            this.createDetailLogPanel();
+            // 设置为详情页模式（日志写入共享存储，不创建浮窗）
+            state.isDetailPage = true;
 
             // 检查是否有任务
             const taskStr = GM_getValue(CONFIG.STORAGE_KEYS.CURRENT_TASK);
