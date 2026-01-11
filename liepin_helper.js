@@ -1023,6 +1023,8 @@
                 initialized = true;
             } else if (location.href.includes('/job/') || location.href.includes('/a/')) {
                 Core.log("检测到职位详情页，初始化...");
+                // 先加载settings，确保 jobDescKeywords 可用
+                StorageManager.loadState();
                 DetailManager.init();
                 initialized = true;
             }
