@@ -902,10 +902,12 @@
             await Core.delay(CONFIG.DETAIL_STAY_TIME);
 
             // 职位介绍关键字筛选
+            Core.log(`[调试] 职位介绍关键字设置: "${state.settings.jobDescKeywords || '未设置'}"`, 'DEBUG');
             if (state.settings.jobDescKeywords) {
                 const keywords = state.settings.jobDescKeywords.split(/[,，]/).map(k => k.trim()).filter(k => k);
                 if (keywords.length > 0) {
                     const jobDesc = this.getJobDescription();
+                    Core.log(`[调试] 获取到职位介绍: ${jobDesc ? jobDesc.length + '字' : '失败'}`, 'DEBUG');
                     if (jobDesc) {
                         // 查找匹配的关键字
                         const matchedKeyword = keywords.find(kw => jobDesc.includes(kw));
@@ -920,8 +922,12 @@
                         }
                         Core.log(`✅ 职位介绍匹配关键字【${matchedKeyword}】`, 'SUCCESS');
                         task.matchedJobDescKeyword = matchedKeyword;
+                        // 立即保存到GM存储，让列表页能读取到
+                        GM_setValue(CONFIG.STORAGE_KEYS.CURRENT_TASK, JSON.stringify(task));
                     }
                 }
+            } else {
+                Core.log('[调试] 未设置职位介绍关键字，跳过筛选', 'DEBUG');
             }
 
             const applyBtn = this.findApplyButton();
