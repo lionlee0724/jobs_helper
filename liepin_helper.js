@@ -884,6 +884,9 @@
      */
     const DetailManager = {
         init() {
+            // 创建详情页日志浮窗
+            this.createDetailLogPanel();
+
             // 检查是否有任务
             const taskStr = GM_getValue(CONFIG.STORAGE_KEYS.CURRENT_TASK);
             if (!taskStr) return;
@@ -897,6 +900,57 @@
             if (task.status !== 'pending') return;
 
             this.runAutoApply(task);
+        },
+
+        /**
+         * 创建详情页日志浮窗
+         */
+        createDetailLogPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'lp-detail-log-panel';
+            panel.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                width: 350px;
+                max-height: 250px;
+                background: rgba(255,255,255,0.95);
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 999999;
+                font-family: sans-serif;
+                border: 2px solid ${CONFIG.COLORS.primary};
+                overflow: hidden;
+            `;
+
+            // 标题栏
+            const header = document.createElement('div');
+            header.style.cssText = `
+                padding: 8px 12px;
+                background: ${CONFIG.COLORS.primary};
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+            `;
+            header.textContent = '📝 猎聘助手 - 详情页日志';
+
+            // 日志容器
+            const logContainer = document.createElement('div');
+            logContainer.style.cssText = `
+                padding: 8px;
+                max-height: 200px;
+                overflow-y: auto;
+                font-size: 12px;
+            `;
+
+            panel.appendChild(header);
+            panel.appendChild(logContainer);
+            document.body.appendChild(panel);
+
+            // 绑定到UI.logContainer，让Core.log能输出到这里
+            UI.logContainer = logContainer;
+
+            Core.log('详情页日志浮窗已创建', 'DEBUG');
         },
 
         async runAutoApply(task) {
