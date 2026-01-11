@@ -781,15 +781,31 @@
             const result = await this.waitForTaskResult(jobInfo.link, win);
 
             if (result === 'success') {
-                Core.log("投递成功");
+                // 显示匹配摘要
+                let matchSummary = '▶️ 匹配摘要: ';
+                const matchDetails = [];
+                if (jobInfo.matchedKeyword) matchDetails.push(`职位关键字【${jobInfo.matchedKeyword}】`);
+                if (jobInfo.matchedCity) matchDetails.push(`城市【${jobInfo.matchedCity}】`);
+                // 读取详情页保存的职位介绍匹配信息
+                try {
+                    const taskData = JSON.parse(GM_getValue(CONFIG.STORAGE_KEYS.CURRENT_TASK, '{}'));
+                    if (taskData.matchedJobDescKeyword) matchDetails.push(`职位介绍【${taskData.matchedJobDescKeyword}】`);
+                } catch (e) { }
+                if (matchDetails.length > 0) {
+                    matchSummary += matchDetails.join(' + ');
+                    Core.log(matchSummary, 'SUCCESS');
+                }
+                Core.log("投递成功", 'SUCCESS');
                 state.stats.success++;
                 StorageManager.addProcessedJob(jobInfo.id);
             } else if (result === 'fail') {
-                Core.log("投递失败或无按钮");
+                Core.log("投递失败或无按钮", 'ERROR');
                 state.stats.fail++;
-                // 失败了不一定标记为永久处理，看情况... 这里简单起见先不永久标记失败
+            } else if (result === 'skip') {
+                Core.log("职位介绍不匹配，已跳过", 'SKIP');
+                state.stats.skip++;
             } else {
-                Core.log("投递操作超时");
+                Core.log("投递操作超时", 'WARNING');
                 state.stats.fail++;
             }
         },
