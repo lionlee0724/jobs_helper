@@ -210,7 +210,8 @@
 
         static set(key, value) {
             try {
-                localStorage.setItem(key, JSON.stringify(value));
+                // 使用 GM_setValue 跨窗口共享
+                GM_setValue(key, JSON.stringify(value));
             } catch (e) {
                 console.error(`写入存储失败: ${key}`, e);
             }
