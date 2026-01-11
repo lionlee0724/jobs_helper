@@ -713,7 +713,9 @@
                     }
                     // 显示匹配到的关键字
                     const matchSource = jobInfo.title.includes(matchedKey) ? '职位名' : '公司名';
-                    Core.log(`✅ ${matchSource}匹配关键字"${matchedKey}": ${jobInfo.title}`, 'DEBUG');
+                    Core.log(`✅ ${matchSource}匹配关键字【${matchedKey}】: ${jobInfo.title}`, 'DEBUG');
+                    jobInfo.matchedKeyword = matchedKey;
+                    jobInfo.matchSource = matchSource;
                 }
             }
 
@@ -727,7 +729,8 @@
                         return true;
                     }
                     // 显示匹配到的城市
-                    Core.log(`✅ 城市匹配关键字"${matchedCity}": ${jobInfo.location} - ${jobInfo.title}`, 'DEBUG');
+                    Core.log(`✅ 城市匹配关键字【${matchedCity}】: ${jobInfo.location} - ${jobInfo.title}`, 'DEBUG');
+                    jobInfo.matchedCity = matchedCity;
                 }
             }
 
@@ -893,14 +896,26 @@
                             if (state.settings.autoCloseDetail) { window.close(); }
                             return;
                         }
-                        // 显示匹配到的关键字
-                        Core.log(`✅ 职位介绍匹配关键字"${matchedKeyword}"`, 'SUCCESS');
+                        Core.log(`✅ 职位介绍匹配关键字【${matchedKeyword}】`, 'SUCCESS');
+                        task.matchedJobDescKeyword = matchedKeyword;
                     }
                 }
             }
 
             const applyBtn = this.findApplyButton();
             if (applyBtn) {
+                // 显示匹配摘要
+                let matchSummary = '▶️ 匹配摘要: ';
+                const matchDetails = [];
+                if (task.matchedKeyword) matchDetails.push(`职位关键字【${task.matchedKeyword}】`);
+                if (task.matchedCity) matchDetails.push(`城市【${task.matchedCity}】`);
+                if (task.matchedJobDescKeyword) matchDetails.push(`职位介绍【${task.matchedJobDescKeyword}】`);
+                if (matchDetails.length > 0) {
+                    matchSummary += matchDetails.join(' + ');
+                    Core.log(matchSummary, 'INFO');
+                }
+
+                Core.log('正在点击投递按钮...', 'INFO');
                 applyBtn.click();
                 await Core.delay(1000);
                 const confirmBtn = document.querySelector('.ant-modal .ant-btn-primary');
