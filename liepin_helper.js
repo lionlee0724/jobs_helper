@@ -44,7 +44,8 @@
 
         STORAGE_LIMITS: {
             PROCESSED_JOBS: 1000, // 记录最近1000个已投递职位ID
-        }
+        },
+        DEFAULT_DAILY_LIMIT: 200,
     };
 
     /**
@@ -76,6 +77,7 @@
             fail: 0,
             skip: 0
         },
+        dailyCount: 0, // 今日投递数
 
         // 已处理的职位ID集合 (从Storage加载)
         processedJobs: new Set(),
@@ -236,11 +238,33 @@
             const savedSettings = this.get(CONFIG.STORAGE_KEYS.SETTINGS, {});
             Object.assign(state.settings, savedSettings);
 
+            // 默认日限额
+            if (state.settings.dailyLimit === undefined) {
+                state.settings.dailyLimit = CONFIG.DEFAULT_DAILY_LIMIT;
+            }
+
+            // 加载每日统计
+            const stats = this.get(CONFIG.STORAGE_KEYS.STATS, {});
+            const today = new Date().toLocaleDateString();
+            if (stats.date === today) {
+                state.dailyCount = stats.count || 0;
+            } else {
+                state.dailyCount = 0;
+                this.saveStats();
+            }
+
             // 加载已处理记录
             const processed = this.get(CONFIG.STORAGE_KEYS.PROCESSED_JOBS, []);
             state.processedJobs = new Set(processed);
 
-            Core.log(`已加载 ${state.processedJobs.size} 条历史投递记录`);
+            Core.log(`已加载 ${state.processedJobs.size} 条历史投递记录, 今日已投: ${state.dailyCount}`);
+        }
+
+        static saveStats() {
+            this.set(CONFIG.STORAGE_KEYS.STATS, {
+                date: new Date().toLocaleDateString(),
+                count: state.dailyCount
+            });
         }
 
         /**
@@ -377,6 +401,11 @@
                     <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:4px;">城市限定:</label>
                     <input type="text" id="lp-input-city" value="${state.settings.cityKeywords || ''}" 
                         style="width:95%; padding:4px; border:1px solid #ddd; border-radius:4px;" placeholder="如: 北京,上海,深圳">
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:4px;">每日上限 (0为不限):</label>
+                    <input type="number" id="lp-input-limit" value="${state.settings.dailyLimit}" 
+                        style="width:95%; padding:4px; border:1px solid #ddd; border-radius:4px;">
                 </div>
                 <div style="margin-bottom:8px;">
                      <label style="font-size:12px; font-weight:bold; cursor:pointer;">
@@ -522,6 +551,10 @@
                 StorageManager.saveSettings();
                 Core.log(`城市关键字已更新: ${e.target.value}`, 'INFO');
             };
+            document.getElementById('lp-input-limit').onchange = (e) => {
+                state.settings.dailyLimit = parseInt(e.target.value) || 0;
+                StorageManager.saveSettings();
+            };
             document.getElementById('lp-check-hunter').onchange = (e) => {
                 state.settings.excludeHeadhunters = e.target.checked;
                 StorageManager.saveSettings();
@@ -611,6 +644,12 @@
 
                 for (let card of jobCards) {
                     if (!state.isRunning) break;
+
+                    if (state.settings.dailyLimit > 0 && state.dailyCount >= state.settings.dailyLimit) {
+                        Core.log(`⚠️ 已达到每日投递上限 (${state.settings.dailyLimit})，停止任务`, 'WARNING');
+                        this.stopLoop();
+                        break;
+                    }
 
                     // 1. 解析卡片信息
                     const jobInfo = this.extractJobInfo(card);
@@ -854,8 +893,10 @@
                     matchSummary += matchDetails.join(' + ');
                     Core.log(matchSummary, 'SUCCESS');
                 }
-                Core.log("投递成功", 'SUCCESS');
+                Core.log(`投递成功 (今日: ${state.dailyCount + 1})`, 'SUCCESS');
                 state.stats.success++;
+                state.dailyCount++;
+                StorageManager.saveStats();
                 StorageManager.addProcessedJob(jobInfo.id);
             } else if (result === 'fail') {
                 Core.log("投递失败或无按钮", 'ERROR');
@@ -935,41 +976,51 @@
         },
 
         async goToNextPage() {
-            // 记录当前职位数量
-            const currentJobCount = document.querySelectorAll('li.job-card-box').length ||
-                document.querySelectorAll('.job-list-item').length ||
-                document.querySelectorAll('[class*="job-card"]').length;
+            Core.log(">>> 开始准备翻页流程");
 
-            // 方法1：尝试无限滚动加载
-            const scrollContainer = document.documentElement || document.body;
-            const previousScrollHeight = scrollContainer.scrollHeight;
+            // 1. 激进的无限滚动加载 (Until bottom)
+            let scrollAttempts = 0;
+            const maxScrollAttempts = 20; // 防止死循环
+            let noNewContentCount = 0;
 
-            // 滚动到页面底部
-            window.scrollTo({
-                top: scrollContainer.scrollHeight,
-                behavior: 'smooth'
-            });
+            while (scrollAttempts < maxScrollAttempts) {
+                const currentJobCount = document.querySelectorAll('li.job-card-box, .job-list-item, [data-selector="job-card"]').length;
+                const scrollContainer = document.documentElement;
+                const previousScrollHeight = scrollContainer.scrollHeight;
 
-            // 等待加载新内容
-            await Core.delay(2000);
+                Core.log(`正在滚动加载 (${scrollAttempts + 1})... 当前职位数: ${currentJobCount}`);
 
-            // 检查是否有新内容加载
-            const newJobCount = document.querySelectorAll('li.job-card-box').length ||
-                document.querySelectorAll('.job-list-item').length ||
-                document.querySelectorAll('[class*="job-card"]').length;
+                // 滚动到底部
+                window.scrollTo({
+                    top: scrollContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
 
-            if (newJobCount > currentJobCount) {
-                Core.log(`滚动加载成功，新增 ${newJobCount - currentJobCount} 个职位`);
-                return true;
+                // 等待加载
+                await Core.delay(2500);
+
+                // 检查变化
+                const newJobCount = document.querySelectorAll('li.job-card-box, .job-list-item, [data-selector="job-card"]').length;
+                const newScrollHeight = scrollContainer.scrollHeight;
+
+                if (newJobCount > currentJobCount || newScrollHeight > previousScrollHeight) {
+                    Core.log(`滚动加载成功: 高度+${newScrollHeight - previousScrollHeight}, 职位+${newJobCount - currentJobCount}`);
+                    noNewContentCount = 0; // 重置计数器
+                    scrollAttempts++;
+                } else {
+                    Core.log("滚动未发现新内容");
+                    noNewContentCount++;
+                    // 连续两次没有新内容，认为触底
+                    if (noNewContentCount >= 2) {
+                        Core.log("页面已触底 (连续2次无新内容)");
+                        break;
+                    }
+                }
             }
 
-            // 检查页面高度是否变化
-            if (scrollContainer.scrollHeight > previousScrollHeight) {
-                Core.log("滚动加载成功（页面高度增加）");
-                return true;
-            }
+            Core.log("滚动加载结束，检查翻页按钮...");
 
-            // 方法2：尝试分页按钮
+            // 2. 尝试点击下一页
             const selectors = [
                 '.ant-pagination-next:not([aria-disabled="true"])',
                 '.pager .next:not(.disabled)',
@@ -979,23 +1030,51 @@
                 '.next-page-btn'
             ];
 
+            let nextBtn = null;
             for (let s of selectors) {
                 const btn = document.querySelector(s);
                 if (btn && btn.offsetParent !== null && !btn.classList.contains('disabled')) {
-                    Core.log("正在翻页...");
-                    btn.click();
-                    return true;
+                    nextBtn = btn;
+                    break;
                 }
             }
 
-            // 针对 Ant Design 的特殊禁用检测
-            const antNextLi = document.querySelector('.ant-pagination-next');
-            if (antNextLi && !antNextLi.classList.contains('ant-pagination-disabled')) {
-                Core.log("正在翻页 (Ant)...");
-                antNextLi.click();
+            // 特殊检查 Ant Design
+            if (!nextBtn) {
+                const antNextLi = document.querySelector('.ant-pagination-next');
+                if (antNextLi && !antNextLi.classList.contains('ant-pagination-disabled')) {
+                    nextBtn = antNextLi;
+                }
+            }
+
+            if (nextBtn) {
+                Core.log(`找到下一页按钮: ${nextBtn.className || nextBtn.tagName}`);
+                Core.log("正在点击翻页...");
+
+                // 记录当前第一条职位的ID，用于检测翻页是否成功
+                const firstCard = document.querySelector('li.job-card-box, .job-list-item');
+                const firstId = firstCard ? (firstCard.dataset.jobId || firstCard.innerText.substring(0, 20)) : null;
+
+                nextBtn.click();
+
+                // 等待页面更新
+                await Core.delay(3000);
+
+                // 简单检测是否翻页成功 (检查第一条职位是否变化)
+                const newFirstCard = document.querySelector('li.job-card-box, .job-list-item');
+                const newFirstId = newFirstCard ? (newFirstCard.dataset.jobId || newFirstCard.innerText.substring(0, 20)) : null;
+
+                if (firstId && newFirstId && firstId !== newFirstId) {
+                    Core.log("翻页成功 (页面内容已更新)");
+                } else {
+                    Core.log("翻页操作已执行 (等待内容加载)");
+                    await Core.delay(2000); // 再多等一会
+                }
+
                 return true;
             }
 
+            Core.log("未找到可用的下一页按钮");
             return false;
         }
     };

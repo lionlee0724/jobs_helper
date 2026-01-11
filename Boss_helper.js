@@ -29,6 +29,12 @@
       SHORT: 30,
       MEDIUM_SHORT: 200,
     },
+    COLORS: {
+      primary: '#4285f4',
+      secondary: '#f5f7fa',
+      accent: '#e8f0fe',
+      neutral: '#6b7280'
+    },
     MINI_ICON_SIZE: 40,
     STORAGE_KEYS: {
       PROCESSED_HRS: "processedHRs",
@@ -37,6 +43,7 @@
       SENT_IMAGE_RESUME_HRS: "sentImageResumeHRs",
       AI_REPLY_COUNT: "aiReplyCount",
       LAST_AI_DATE: "lastAiDate",
+      SETTINGS: "boss_settings" // Unified settings key
     },
     STORAGE_LIMITS: {
       PROCESSED_HRS: 500,
@@ -143,6 +150,153 @@
     },
   };
 
+  /**
+   * 核心工具对象 (Unified Core)
+   * @description 提供日志、延迟、通用DOM操作
+   */
+  const Core = {
+    /**
+     * 增强型日志方法
+     */
+    log(message, level = "INFO") {
+      const time = new Date().toLocaleTimeString();
+      const levelInfo = LOG_LEVEL[level] || LOG_LEVEL.INFO;
+      const logEntry = `[${time}] ${levelInfo.icon} ${message}`;
+
+      // 控制台输出
+      console.log(`[BOSS助手] ${message}`);
+
+      // UI 日志面板输出
+      const logPanel = document.querySelector("#pro-log");
+      if (logPanel) {
+        if (state.comments && state.comments.isCommentMode) {
+          return;
+        }
+
+        const logItem = document.createElement("div");
+        logItem.className = "log-item";
+        logItem.style.cssText = `
+          padding: 4px 8px;
+          color: ${levelInfo.color};
+          border-bottom: 1px solid #f0f0f0;
+          font-size: 13px;
+          line-height: 1.6;
+        `;
+        logItem.textContent = logEntry;
+        logPanel.appendChild(logItem);
+        logPanel.scrollTop = logPanel.scrollHeight;
+      }
+    },
+
+    async delay(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    },
+
+    getContextMultiplier(context) {
+      const multipliers = {
+        dict_load: 1.0,
+        click: 0.8,
+        selection: 0.8,
+        default: 1.0,
+      };
+      return multipliers[context] || multipliers["default"];
+    },
+
+    async smartDelay(baseTime, context = "default") {
+      const multiplier = this.getContextMultiplier(context);
+      const adjustedTime = baseTime * multiplier;
+      return this.delay(adjustedTime);
+    },
+
+    async waitForElement(selectorOrFunction, timeout = 5000) {
+      return new Promise((resolve) => {
+        let element;
+        const getEl = () => {
+             if (typeof selectorOrFunction === "function") return selectorOrFunction();
+             return document.querySelector(selectorOrFunction);
+        };
+        
+        element = getEl();
+        if (element) return resolve(element);
+
+        const observer = new MutationObserver(() => {
+          element = getEl();
+          if (element) {
+            clearTimeout(timeoutId);
+            observer.disconnect();
+            resolve(element);
+          }
+        });
+
+        const timeoutId = setTimeout(() => {
+          observer.disconnect();
+          resolve(null);
+        }, timeout);
+
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+    },
+
+    async simulateClick(element) {
+      if (!element) return;
+
+      const rect = element.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+
+      const dispatchMouseEvent = (type, options = {}) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          view: document.defaultView,
+          clientX: x,
+          clientY: y,
+          ...options,
+        });
+        element.dispatchEvent(event);
+      };
+
+      dispatchMouseEvent("mouseover");
+      await this.delay(CONFIG.DELAYS.SHORT);
+      dispatchMouseEvent("mousemove");
+      await this.delay(CONFIG.DELAYS.SHORT);
+      dispatchMouseEvent("mousedown", { button: 0 });
+      await this.delay(CONFIG.DELAYS.SHORT);
+      dispatchMouseEvent("mouseup", { button: 0 });
+      await this.delay(CONFIG.DELAYS.SHORT);
+      dispatchMouseEvent("click", { button: 0 });
+    },
+
+    extractTwoCharKeywords(text) {
+      const keywords = [];
+      const cleanedText = text.replace(/[\s,，.。:：;；""''\[\]\(\)\{\}]/g, "");
+      for (let i = 0; i < cleanedText.length - 1; i++) {
+        keywords.push(cleanedText.substring(i, i + 2));
+      }
+      return keywords;
+    },
+    
+    // 兼容性保留，便于后续迁移
+    exportLogs() {
+      const logPanel = document.querySelector("#pro-log");
+      if (logPanel) {
+        navigator.clipboard.writeText(logPanel.innerText).then(() => {
+          this.log("日志已复制到剪贴板", "SUCCESS");
+        }).catch(err => {
+          this.log(`复制失败: ${err.message}`, "ERROR");
+        });
+      }
+    },
+    
+    clearLogs() {
+      const logPanel = document.querySelector("#pro-log");
+      if (logPanel) {
+        logPanel.innerHTML = "";
+        this.log("日志已清空", "INFO");
+      }
+    }
+  };
+
   const elements = {
     panel: null,
     controlBtn: null,
@@ -157,6 +311,16 @@
    * @description 封装 LocalStorage 操作，支持容量限制和异常处理
    */
   class StorageManager {
+    // === Unified API ===
+    static get(key, defaultValue) {
+      return this.getParsedItem(key, defaultValue);
+    }
+
+    static set(key, value) {
+      return this.setItem(key, value);
+    }
+
+    // === Original Implementation ===
     static setItem(key, value) {
       try {
         localStorage.setItem(
@@ -165,7 +329,7 @@
         );
         return true;
       } catch (error) {
-        Core.log(`设置存储项 ${key} 失败: ${error.message}`);
+        Core.log(`设置存储项 ${key} 失败: ${error.message}`, "ERROR");
         return false;
       }
     }
@@ -175,7 +339,7 @@
         const value = localStorage.getItem(key);
         return value !== null ? value : defaultValue;
       } catch (error) {
-        Core.log(`获取存储项 ${key} 失败: ${error.message}`);
+        Core.log(`获取存储项 ${key} 失败: ${error.message}`, "ERROR");
         return defaultValue;
       }
     }
@@ -359,7 +523,7 @@
         return;
       }
 
-      await Core.aiReply();
+      await JobManager.aiReply();
     }
 
     static async _handleFirstInteraction(hrKey) {
@@ -411,7 +575,7 @@
     }
 
     static async _handleFollowUpResponse(hrKey) {
-      const lastMessage = await Core.getLastFriendMessageText();
+      const lastMessage = await JobManager.getLastFriendMessageText();
 
       if (
         lastMessage &&
@@ -610,9 +774,9 @@
         let positionName = "";
         try {
           const positionNameElement =
-            Core.getCachedElement(".position-name", true) ||
-            Core.getCachedElement(".job-name", true) ||
-            Core.getCachedElement(
+            JobManager.getCachedElement(".position-name", true) ||
+            JobManager.getCachedElement(".job-name", true) ||
+            JobManager.getCachedElement(
               '[class*="position-content"] .left-content .position-name',
               true
             );
@@ -742,9 +906,9 @@
         let positionName = "";
         try {
           const positionNameElement =
-            Core.getCachedElement(".position-name", true) ||
-            Core.getCachedElement(".job-name", true) ||
-            Core.getCachedElement(
+            JobManager.getCachedElement(".position-name", true) ||
+            JobManager.getCachedElement(".job-name", true) ||
+            JobManager.getCachedElement(
               '[class*="position-content"] .left-content .position-name',
               true
             );
@@ -825,7 +989,7 @@
 
       if (this.currentPageType === this.PAGE_TYPES.JOB_LIST && !state.isRunning) {
         setTimeout(() => {
-          Core.loadAndDisplayComments();
+          JobManager.loadAndDisplayComments();
         }, 500);
       }
 
@@ -838,7 +1002,7 @@
           const jobCard = e.target.closest("li.job-card-box");
           if (jobCard && !state.isRunning) {
             setTimeout(() => {
-              Core.loadAndDisplayComments();
+              JobManager.loadAndDisplayComments();
             }, 500);
           }
         });
@@ -3158,10 +3322,10 @@
   }
 
   /**
-   * 核心工具对象
-   * @description 提供日志、DOM 操作、延迟处理和主要的业务循环逻辑
+   * 业务逻辑管理器 (JobManager)
+   * @description 处理主要的业务循环逻辑
    */
-  const Core = {
+  const JobManager = {
     CONFIG,
 
     messageObserver: null,
@@ -3189,17 +3353,17 @@
     },
 
     async startProcessing() {
-      if (location.pathname.includes("/jobs")) await this.autoScrollJobList();
+      if (location.pathname.includes("/jobs")) await this.ensurePageLoaded();
 
       while (state.isRunning) {
         if (location.pathname.includes("/jobs")) await this.processJobList();
         else if (location.pathname.includes("/chat"))
           await this.handleChatPage();
-        await this.delay(CONFIG.BASIC_INTERVAL);
+        await Core.delay(CONFIG.BASIC_INTERVAL);
       }
     },
 
-    async autoScrollJobList() {
+    async ensurePageLoaded() {
       return new Promise((resolve) => {
         const cardSelector = "li.job-card-box";
         const maxHistory = 3;
@@ -3241,6 +3405,37 @@
           resolve(null);
         };
       });
+    },
+
+    async goToNextPage() {
+      Core.log("准备翻页...");
+      
+      let nextBtn = null;
+      const activePage = document.querySelector(".options-pages a.selected");
+      if (activePage) {
+        nextBtn = activePage.nextElementSibling;
+        if (nextBtn && (nextBtn.classList.contains("disabled") || nextBtn.href.includes("javascript:;"))) {
+          nextBtn = null;
+        }
+      }
+
+      if (!nextBtn) {
+        nextBtn = document.querySelector(".ui-icon-arrow-right")?.closest("a") || 
+                  Array.from(document.querySelectorAll(".options-pages a")).find(a => a.textContent.includes("下一页"));
+        
+        if (nextBtn && nextBtn.classList.contains("disabled")) nextBtn = null;
+      }
+
+      if (nextBtn) {
+        Core.log("找到下一页按钮，点击翻页...");
+        nextBtn.click();
+        await Core.delay(3000); 
+        await this.ensurePageLoaded(); 
+        return true;
+      }
+
+      Core.log("未找到下一页或已到达最后一页", "WARNING");
+      return false;
     },
 
     async processJobList() {
@@ -3292,6 +3487,16 @@
           Core.log(`✅ 工作地匹配关键字"${matchedLocationKey}": ${addressText}`, "DEBUG");
         }
 
+        // 城市关键字匹配
+        if (state.cityKeywords && state.cityKeywords.length > 0) {
+          const matchedCity = state.cityKeywords.find(c => c && addressText.includes(c.trim().toLowerCase()));
+          if (!matchedCity) {
+            Core.log(`跳过: 城市不匹配 (${addressText}) - ${card.querySelector(".job-name")?.textContent}`, "SKIP");
+            return false;
+          }
+          Core.log(`✅ 城市匹配关键字"${matchedCity}": ${addressText}`, "DEBUG");
+        }
+
         // 猎头过滤
         const excludeHeadhunterMatch =
           !excludeHeadhunters || !altText.includes("猎头");
@@ -3310,6 +3515,14 @@
       }
 
       if (state.currentIndex >= state.jobList.length) {
+        // 尝试翻页
+        const hasNext = await this.goToNextPage();
+        if (hasNext) {
+          state.currentIndex = 0;
+          state.jobList = [];
+          return;
+        }
+
         this.resetCycle();
         return;
       }
@@ -3319,6 +3532,21 @@
       currentCard.click();
 
       await this.delay(CONFIG.OPERATION_INTERVAL * 2);
+
+      // 职责描述筛选
+      if (state.jobDescKeywords && state.jobDescKeywords.length > 0) {
+        const descEl = document.querySelector(".job-sec-text") || document.querySelector(".job-detail-section");
+        if (descEl) {
+          const descText = descEl.textContent.toLowerCase();
+          const matchedDesc = state.jobDescKeywords.find(k => k && descText.includes(k.trim().toLowerCase()));
+          if (!matchedDesc) {
+            this.log(`跳过: 职责描述不匹配`, "SKIP");
+            state.currentIndex++;
+            return;
+          }
+          Core.log(`✅ 职责描述匹配关键字"${matchedDesc}"`, "DEBUG");
+        }
+      }
 
       let activeTime = "未知";
       const onlineTag = document.querySelector(".boss-online-tag");
@@ -3589,9 +3817,9 @@
     getPositionNameFromChat() {
       try {
         const positionNameElement =
-          Core.getCachedElement(".position-name", true) ||
-          Core.getCachedElement(".job-name", true) ||
-          Core.getCachedElement(
+          JobManager.getCachedElement(".position-name", true) ||
+          JobManager.getCachedElement(".job-name", true) ||
+          JobManager.getCachedElement(
             '[class*="position-content"] .left-content .position-name',
             true
           ) ||
@@ -3758,91 +3986,27 @@
     },
 
     async simulateClick(element) {
-      if (!element) return;
-
-      const rect = element.getBoundingClientRect();
-      const x = rect.left + rect.width / 2;
-      const y = rect.top + rect.height / 2;
-
-      const dispatchMouseEvent = (type, options = {}) => {
-        const event = new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          view: document.defaultView,
-          clientX: x,
-          clientY: y,
-          ...options,
-        });
-        element.dispatchEvent(event);
-      };
-
-      dispatchMouseEvent("mouseover");
-      await this.delay(CONFIG.DELAYS.SHORT);
-      dispatchMouseEvent("mousemove");
-      await this.delay(CONFIG.DELAYS.SHORT);
-      dispatchMouseEvent("mousedown", { button: 0 });
-      await this.delay(CONFIG.DELAYS.SHORT);
-      dispatchMouseEvent("mouseup", { button: 0 });
-      await this.delay(CONFIG.DELAYS.SHORT);
-      dispatchMouseEvent("click", { button: 0 });
+      return Core.simulateClick(element);
     },
 
     async waitForElement(selectorOrFunction, timeout = 5000) {
-      return new Promise((resolve) => {
-        let element;
-        if (typeof selectorOrFunction === "function")
-          element = selectorOrFunction();
-        else element = document.querySelector(selectorOrFunction);
-
-        if (element) return resolve(element);
-
-        const timeoutId = setTimeout(() => {
-          observer.disconnect();
-          resolve(null);
-        }, timeout);
-        const observer = new MutationObserver(() => {
-          if (typeof selectorOrFunction === "function")
-            element = selectorOrFunction();
-          else element = document.querySelector(selectorOrFunction);
-          if (element) {
-            clearTimeout(timeoutId);
-            observer.disconnect();
-            resolve(element);
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      });
+      return Core.waitForElement(selectorOrFunction, timeout);
     },
 
     getContextMultiplier(context) {
-      const multipliers = {
-        dict_load: 1.0,
-        click: 0.8,
-        selection: 0.8,
-        default: 1.0,
-      };
-      return multipliers[context] || multipliers["default"];
+      return Core.getContextMultiplier(context);
     },
 
     async smartDelay(baseTime, context = "default") {
-      const multiplier = this.getContextMultiplier(context);
-      const adjustedTime = baseTime * multiplier;
-      return this.delay(adjustedTime);
+      return Core.smartDelay(baseTime, context);
     },
 
     async delay(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
+      return Core.delay(ms);
     },
 
     extractTwoCharKeywords(text) {
-      const keywords = [];
-      const cleanedText = text.replace(/[\s,，.。:：;；""''\[\]\(\)\{\}]/g, "");
-
-      for (let i = 0; i < cleanedText.length - 1; i++) {
-        keywords.push(cleanedText.substring(i, i + 2));
-      }
-
-      return keywords;
+      return Core.extractTwoCharKeywords(text);
     },
 
     resetCycle() {
@@ -3851,68 +4015,16 @@
       state.currentIndex = 0;
     },
 
-    /**
-     * 增强型日志方法
-     * @description 支持6个级别的日志输出，带颜色和图标
-     * @param {string} message - 日志消息
-     * @param {string} level - 日志级别 (DEBUG/INFO/SUCCESS/WARNING/ERROR/SKIP)
-     */
     log(message, level = "INFO") {
-      const time = new Date().toLocaleTimeString();
-      const levelInfo = LOG_LEVEL[level] || LOG_LEVEL.INFO;
-      const logEntry = `[${time}] ${levelInfo.icon} ${message}`;
-
-      // 控制台输出
-      console.log(`[BOSS助手] ${message}`);
-
-      // UI 日志面板输出
-      const logPanel = document.querySelector("#pro-log");
-      if (logPanel) {
-        if (state.comments.isCommentMode) {
-          return;
-        }
-
-        const logItem = document.createElement("div");
-        logItem.className = "log-item";
-        logItem.style.cssText = `
-          padding: 4px 8px;
-          color: ${levelInfo.color};
-          border-bottom: 1px solid #f0f0f0;
-          font-size: 13px;
-          line-height: 1.6;
-        `;
-        logItem.textContent = logEntry;
-        logPanel.appendChild(logItem);
-        logPanel.scrollTop = logPanel.scrollHeight;
-      }
+      Core.log(message, level);
     },
 
-    /**
-     * 导出日志到剪贴板
-     * @description 将当前日志内容复制到剪贴板
-     */
     exportLogs() {
-      const logPanel = document.querySelector("#pro-log");
-      if (logPanel) {
-        const logs = logPanel.innerText;
-        navigator.clipboard.writeText(logs).then(() => {
-          this.log("日志已复制到剪贴板", "SUCCESS");
-        }).catch(err => {
-          this.log(`复制失败: ${err.message}`, "ERROR");
-        });
-      }
+      Core.exportLogs();
     },
 
-    /**
-     * 清空日志
-     * @description 清空日志显示区域
-     */
     clearLogs() {
-      const logPanel = document.querySelector("#pro-log");
-      if (logPanel) {
-        logPanel.innerHTML = "";
-        this.log("日志已清空", "INFO");
-      }
+      Core.clearLogs();
     },
 
     async getCurrentCompanyName() {
@@ -4252,7 +4364,7 @@
         }】，工作地包含【${state.locationKeywords.join("、") || "无"}】`
       );
 
-      Core.startProcessing();
+      JobManager.startProcessing();
     } else {
       elements.controlBtn.textContent = "启动海投";
       elements.controlBtn.style.background = "#4285f4";
@@ -4262,7 +4374,7 @@
 
       if (location.pathname.includes("/jobs")) {
         setTimeout(() => {
-          Core.loadAndDisplayComments();
+          JobManager.loadAndDisplayComments();
         }, 300);
       }
     }
@@ -4278,7 +4390,7 @@
       const startTime = new Date();
       Core.log(`开始智能聊天，时间：${startTime.toLocaleTimeString()}`);
 
-      Core.startProcessing();
+      JobManager.startProcessing();
     } else {
       elements.controlBtn.textContent = "开始智能聊天";
       elements.controlBtn.style.background = "#34a853";
@@ -4974,7 +5086,7 @@
       lastUrl = currentUrl;
       if (UI.currentPageType === UI.PAGE_TYPES.JOB_LIST && !state.isRunning && location.pathname.includes("/jobs")) {
         setTimeout(() => {
-          Core.loadAndDisplayComments();
+          JobManager.loadAndDisplayComments();
         }, 500);
       }
     }
