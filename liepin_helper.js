@@ -760,7 +760,13 @@
             const task = {
                 url: jobInfo.link,
                 status: 'pending',
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                // 保存列表页匹配信息
+                matchedKeyword: jobInfo.matchedKeyword || '',
+                matchedCity: jobInfo.matchedCity || '',
+                matchSource: jobInfo.matchSource || '',
+                title: jobInfo.title,
+                company: jobInfo.company
             };
             GM_setValue(CONFIG.STORAGE_KEYS.CURRENT_TASK, JSON.stringify(task));
 
