@@ -199,8 +199,9 @@
     class StorageManager {
         static get(key, defaultValue) {
             try {
-                const val = localStorage.getItem(key);
-                return val ? JSON.parse(val) : defaultValue;
+                // 使用 GM_getValue 跨窗口共享
+                const val = GM_getValue(key);
+                return val ? (typeof val === 'string' ? JSON.parse(val) : val) : defaultValue;
             } catch (e) {
                 console.error(`读取存储失败: ${key}`, e);
                 return defaultValue;
