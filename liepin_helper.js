@@ -935,7 +935,41 @@
         },
 
         async goToNextPage() {
-            // 适配更多UI库
+            // 记录当前职位数量
+            const currentJobCount = document.querySelectorAll('li.job-card-box').length ||
+                document.querySelectorAll('.job-list-item').length ||
+                document.querySelectorAll('[class*="job-card"]').length;
+
+            // 方法1：尝试无限滚动加载
+            const scrollContainer = document.documentElement || document.body;
+            const previousScrollHeight = scrollContainer.scrollHeight;
+
+            // 滚动到页面底部
+            window.scrollTo({
+                top: scrollContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+
+            // 等待加载新内容
+            await Core.delay(2000);
+
+            // 检查是否有新内容加载
+            const newJobCount = document.querySelectorAll('li.job-card-box').length ||
+                document.querySelectorAll('.job-list-item').length ||
+                document.querySelectorAll('[class*="job-card"]').length;
+
+            if (newJobCount > currentJobCount) {
+                Core.log(`滚动加载成功，新增 ${newJobCount - currentJobCount} 个职位`);
+                return true;
+            }
+
+            // 检查页面高度是否变化
+            if (scrollContainer.scrollHeight > previousScrollHeight) {
+                Core.log("滚动加载成功（页面高度增加）");
+                return true;
+            }
+
+            // 方法2：尝试分页按钮
             const selectors = [
                 '.ant-pagination-next:not([aria-disabled="true"])',
                 '.pager .next:not(.disabled)',
@@ -953,6 +987,7 @@
                     return true;
                 }
             }
+
             // 针对 Ant Design 的特殊禁用检测
             const antNextLi = document.querySelector('.ant-pagination-next');
             if (antNextLi && !antNextLi.classList.contains('ant-pagination-disabled')) {
