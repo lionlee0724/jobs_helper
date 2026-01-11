@@ -704,24 +704,30 @@
             // 关键词过滤
             if (state.settings.keywords) {
                 const keys = state.settings.keywords.split(/[,，]/).map(k => k.trim()).filter(k => k);
-                const match = keys.some(k => jobInfo.title.includes(k) || jobInfo.company.includes(k));
-                if (!match) {
-                    Core.log(`跳过: 职位关键词不匹配 (${jobInfo.title})`, 'SKIP');
-                    return true;
+                if (keys.length > 0) {
+                    // 查找匹配的关键字
+                    const matchedKey = keys.find(k => jobInfo.title.includes(k) || jobInfo.company.includes(k));
+                    if (!matchedKey) {
+                        Core.log(`跳过: 职位关键词不匹配 (${jobInfo.title})`, 'SKIP');
+                        return true;
+                    }
+                    // 显示匹配到的关键字
+                    const matchSource = jobInfo.title.includes(matchedKey) ? '职位名' : '公司名';
+                    Core.log(`✅ ${matchSource}匹配关键字"${matchedKey}": ${jobInfo.title}`, 'DEBUG');
                 }
             }
 
-            // 新增：城市关键字过滤
+            // 城市关键字过滤
             if (state.settings.cityKeywords) {
                 const cities = state.settings.cityKeywords.split(/[,，]/).map(k => k.trim()).filter(k => k);
                 if (cities.length > 0) {
-                    const cityMatch = cities.some(city => jobInfo.location.includes(city));
-                    if (!cityMatch) {
+                    const matchedCity = cities.find(city => jobInfo.location.includes(city));
+                    if (!matchedCity) {
                         Core.log(`跳过: 城市不匹配 (${jobInfo.location}) - ${jobInfo.title}`, 'SKIP');
                         return true;
-                    } else {
-                        Core.log(`城市匹配: ${jobInfo.location} - ${jobInfo.title}`, 'DEBUG');
                     }
+                    // 显示匹配到的城市
+                    Core.log(`✅ 城市匹配关键字"${matchedCity}": ${jobInfo.location} - ${jobInfo.title}`, 'DEBUG');
                 }
             }
 
@@ -876,9 +882,10 @@
                 if (keywords.length > 0) {
                     const jobDesc = this.getJobDescription();
                     if (jobDesc) {
-                        const matched = keywords.some(kw => jobDesc.includes(kw));
-                        if (!matched) {
-                            Core.log('职位介绍不匹配关键字，跳过投递', 'SKIP');
+                        // 查找匹配的关键字
+                        const matchedKeyword = keywords.find(kw => jobDesc.includes(kw));
+                        if (!matchedKeyword) {
+                            Core.log('跳过: 职位介绍不匹配关键字，跳过投递', 'SKIP');
                             this.showStatus("职位介绍不符合，已跳过");
                             task.status = 'skip';
                             GM_setValue(CONFIG.STORAGE_KEYS.CURRENT_TASK, JSON.stringify(task));
@@ -886,7 +893,8 @@
                             if (state.settings.autoCloseDetail) { window.close(); }
                             return;
                         }
-                        Core.log('职位介绍匹配成功', 'SUCCESS');
+                        // 显示匹配到的关键字
+                        Core.log(`✅ 职位介绍匹配关键字"${matchedKeyword}"`, 'SUCCESS');
                     }
                 }
             }
