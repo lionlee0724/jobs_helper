@@ -876,7 +876,23 @@
             };
         }
 
+        // Helper to trace execution from detail page to list page
+        trace(msg) {
+            const logMsg = `[Det-${new Date().getSeconds()}] ${msg}`;
+            // Core.log(logMsg); // Local log
+            const old = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'debug_trace', '');
+            const newLog = (old ? old + '\n' : '') + logMsg;
+            const lines = newLog.split('\n');
+            const kept = lines.slice(-5).join('\n'); // Keep last 5 lines
+            StorageManager.set(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'debug_trace', kept);
+        }
+
         init() {
+            // Early trace
+            if (this.isDetailPage()) {
+                this.trace("策略初始化(Init)...");
+            }
+
             Core.log('猎聘策略初始化...');
             this.loadSettings();
 
@@ -884,9 +900,10 @@
             if (location.href.includes('/chat/im/success') ||
                 document.querySelector('.apply-success') ||
                 document.title.includes('投递成功')) {
+                this.trace("检测到成功页");
                 const task = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'current_task');
                 if (task && task.autoClose) {
-                    Core.log("检测到投递成功页面，即将关闭...");
+                    this.trace("关闭成功页");
                     StorageManager.set(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'task_result', 'success');
                     setTimeout(() => window.close(), 1000);
                     return;
@@ -904,15 +921,18 @@
             if (this.isDetailPage()) {
                 const task = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'current_task');
                 if (task && task.jobId) {
-                    // Check validity (prevent zombie tasks)
                     const now = Date.now();
-                    // Task valid for 60 seconds
-                    if (task.timestamp && (now - task.timestamp < 60000)) {
-                        Core.log("检测到活跃自动投递任务，开始执行...");
+                    const age = now - (task.timestamp || 0);
+                    this.trace(`发现任务: ${task.jobId}, Age: ${age}ms`);
+
+                    if (age < 60000) {
+                        this.trace("任务有效，启动...");
                         this.start(false);
                     } else {
-                        Core.log("当前暂无活跃任务或任务已过期", "DEBUG");
+                        this.trace("任务过期");
                     }
+                } else {
+                    this.trace("无有效任务数据");
                 }
             }
         }
@@ -942,37 +962,44 @@
 
         // ... (methods skipped) ...
 
+
+
         async handleDetailPage() {
             try {
-                // 详情页逻辑：读取任务 -> 筛选 -> 投递 -> 返回结果 -> 关闭
+                this.trace("进入详情页处理流程...");
                 const task = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'current_task');
-                if (!task || !task.jobId) return;
 
-                Core.log("正在执行自动投递任务...");
+                if (!task || !task.jobId) {
+                    this.trace("未找到任务信息，退出。");
+                    return;
+                }
 
-                // Sync UI state
+                // Check timestamp validity
+                if (task.timestamp && (Date.now() - task.timestamp > 60000)) {
+                    this.trace("任务时间戳过期，退出。");
+                    return;
+                }
+
+                this.trace(`开始处理任务: ${task.jobId}`);
                 this.updateButtonState(true);
 
-                await Core.delay(2000); // Wait for page stability
+                await Core.delay(2000);
 
                 // 职责描述筛选
                 if (task.jobDescKeywords) {
-                    // ... (keyword logic)
+                    this.trace("正在进行关键词筛选...");
                     const desc = document.body.innerText;
                     const matched = this.getMatchedKeywords(desc, task.jobDescKeywords);
-                    // If keywords set but no match found:
                     if (task.jobDescKeywords && matched.length === 0) {
-                        // Double check if using "white list" logic or "must contain" logic?
-                        // User phrasing "筛选" implies "must contain".
-                        // If user provided keywords, and NONE appear, skip.
                         const kws = task.jobDescKeywords.split(/[,，]/).filter(k => k.trim());
                         if (kws.length > 0) {
-                            Core.log("职责描述不匹配，跳过");
+                            this.trace("关键词不匹配，跳过。");
                             this.reportResult('skip', { desc: [] });
                             if (task.autoClose) window.close();
                             return;
                         }
                     }
+                    this.trace("关键词筛选通过。");
                 }
 
                 // 查找关键按钮 (Wait loop)
@@ -981,12 +1008,12 @@
                 let attempts = 0;
                 const maxAttempts = 10;
 
+                this.trace("开始寻找操作按钮...");
                 while (attempts < maxAttempts) {
-                    const allActions = Array.from(document.querySelectorAll('a, button, div.btn-group span, .btn-container .btn, .apply-btn-container .btn, [data-selector="chat-btn"], [data-selector="apply-btn"]'));
+                    const allActions = Array.from(document.querySelectorAll('a, button, div.btn-group span, .btn-container .btn, .apply-btn-container .btn, [data-selector="chat-btn"], [data-selector="apply-btn"], .btns-item .btn'));
 
                     chatBtn = allActions.find(el => {
                         const t = el.innerText.trim();
-                        // Handle icon-only or complex structure? Usually text is present.
                         return (t === '聊一聊' || t === '立即沟通') && !t.includes('已');
                     });
 
@@ -995,12 +1022,17 @@
                         return (t === '投简历' || t === '立即应聘') && !t.includes('已');
                     });
 
-                    if (chatBtn || applyBtn) break;
-
-                    if (document.body.innerText.includes('已投递') || document.body.innerText.includes('已沟通')) {
+                    if (chatBtn || applyBtn) {
+                        this.trace(`找到按钮: ${applyBtn ? '投简历' : ''} ${chatBtn ? '聊一聊' : ''}`);
                         break;
                     }
 
+                    if (document.body.innerText.includes('已投递') || document.body.innerText.includes('已沟通')) {
+                        this.trace("检测到已投递状态 (文本)。");
+                        break;
+                    }
+
+                    if (attempts % 2 === 0) this.trace(`寻找按钮中 (${attempts}/${maxAttempts})...`);
                     attempts++;
                     await Core.delay(1000);
                 }
@@ -1013,50 +1045,54 @@
                 }
 
                 if (applyBtn) {
-                    // Logic A
                     if (chatBtn) {
-                        Core.log("执行: 聊一聊");
+                        this.trace("点击: 聊一聊");
                         chatBtn.click();
                         await Core.delay(1500);
                     }
-                    Core.log("执行: 投简历");
+                    this.trace("点击: 投简历");
                     applyBtn.click();
                     await Core.delay(1500);
 
                     const confirmBtn = Array.from(document.querySelectorAll('.ant-modal button, .ant-modal a')).find(b => b.innerText.includes('立即投递'));
                     if (confirmBtn) {
+                        this.trace("点击: 确认投递弹窗");
                         confirmBtn.click();
                         await Core.delay(1000);
                     } else {
                         const genericConfirm = document.querySelector('.ant-modal .ant-btn-primary');
-                        if (genericConfirm) genericConfirm.click();
+                        if (genericConfirm) {
+                            this.trace("点击: 通用确认弹窗");
+                            genericConfirm.click();
+                        }
                     }
                     actionStatus = 'success_apply';
 
                 } else if (chatBtn) {
-                    // Logic B
-                    Core.log("仅执行: 聊一聊");
+                    this.trace("点击: 仅聊一聊");
                     chatBtn.click();
                     await Core.delay(1000);
                     actionStatus = 'success_chat';
                 } else {
                     if (document.body.innerText.includes('已投递') || document.body.innerText.includes('已沟通')) {
-                        Core.log("检测到已投递状态");
                         actionStatus = 'success_chat';
                     } else {
-                        Core.log("未找到有效操作按钮", "ERROR");
+                        this.trace("错误: 未找到有效按钮，且未检测到已投递状态。");
+                        // Log DOM dump for debug? Toolong.
                     }
                 }
 
                 this.reportResult(actionStatus, { desc: matchedDesc });
+                this.trace(`任务完成: ${actionStatus}`);
 
                 if (task.autoClose) {
+                    this.trace("准备关闭页面...");
                     await Core.delay(1000);
                     window.close();
                 }
             } catch (err) {
-                Core.log(`详情页执行出错: ${err.message}`, "ERROR");
-                this.reportResult('fail'); // Ensure we unblock list page
+                this.trace(`严重错误: ${err.message}`);
+                this.reportResult('fail');
             }
         }
 
@@ -1356,10 +1392,12 @@
             Core.log(`正在处理: ${job.title}`, "INFO");
 
             // 传递任务数据给详情页
+            // 传递任务数据给详情页
             StorageManager.set(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'current_task', {
                 jobId: job.id,
-                jobDescKeywords: this.settings.jobDescKeywords, // 传递筛选参数
-                autoClose: this.settings.autoClose
+                jobDescKeywords: this.settings.jobDescKeywords,
+                autoClose: this.settings.autoClose,
+                timestamp: Date.now()
             });
 
             // 打开详情页
@@ -1413,13 +1451,23 @@
         async waitForTaskResult() {
             return new Promise(resolve => {
                 let checks = 0;
+                let lastTrace = "";
                 const timer = setInterval(() => {
+                    // Check Result
                     const result = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'task_result');
                     if (result) {
                         clearInterval(timer);
                         StorageManager.set(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'task_result', null); // Clear
                         resolve(result);
                     }
+
+                    // Poll Trace
+                    const trace = StorageManager.get(CONFIG.STORAGE_KEYS.PREFIX_LIEPIN + 'debug_trace');
+                    if (trace && trace !== lastTrace) {
+                        Core.log(trace); // Print to List Page UI
+                        lastTrace = trace;
+                    }
+
                     if (checks++ > 30) { // 30秒超时
                         clearInterval(timer);
                         resolve('timeout');
