@@ -281,8 +281,15 @@
         createPanel() {
             const panel = document.createElement('div');
             panel.id = 'lp-unified-panel';
+
+            // 从存储读取位置
+            const panelState = GM_getValue('lp_panel_state', { top: 100, right: 20 });
+            const posStyle = panelState.left
+                ? `top: ${panelState.top}px; left: ${panelState.left}px;`
+                : `top: ${panelState.top || 100}px; right: ${panelState.right || 20}px;`;
+
             panel.style.cssText = `
-                position: fixed; top: 100px; right: 20px; width: 320px;
+                position: fixed; ${posStyle} width: 320px;
                 background: white; border-radius: 8px; 
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 z-index: 999999; font-family: sans-serif;
@@ -297,7 +304,34 @@
                 display: flex; justify-content: space-between; align-items: center;
                 cursor: move;
             `;
-            header.innerHTML = `<span>猎聘海投助手 2.0</span> <span id="lp-min-btn" style="cursor:pointer; font-size:18px;">—</span>`;
+
+            // 图钉按钮和最小化按钮
+            const pinBtn = document.createElement('span');
+            pinBtn.id = 'lp-pin-btn';
+            pinBtn.style.cssText = 'cursor:pointer; font-size:16px; margin-right:10px;';
+            // 从存储读取固定状态
+            const pinState = GM_getValue('lp_panel_state', { pinned: false });
+            pinBtn.textContent = pinState.pinned ? '📌' : '📍';
+            pinBtn.title = pinState.pinned ? '已固定（点击取消）' : '未固定（点击固定）';
+
+            pinBtn.onclick = () => {
+                const state = GM_getValue('lp_panel_state', { pinned: false });
+                state.pinned = !state.pinned;
+                GM_setValue('lp_panel_state', state);
+                pinBtn.textContent = state.pinned ? '📌' : '📍';
+                pinBtn.title = state.pinned ? '已固定（点击取消）' : '未固定（点击固定）';
+                Core.log(state.pinned ? '浮窗已固定' : '浮窗已取消固定', 'INFO');
+            };
+
+            header.innerHTML = '<span>猎聘海投助手 2.0</span>';
+            const headerBtnGroup = document.createElement('span');
+            headerBtnGroup.append(pinBtn);
+            const minBtn = document.createElement('span');
+            minBtn.id = 'lp-min-btn';
+            minBtn.style.cssText = 'cursor:pointer; font-size:18px;';
+            minBtn.textContent = '—';
+            headerBtnGroup.append(minBtn);
+            header.append(headerBtnGroup);
 
             // 2. 内容区
             const content = document.createElement('div');
@@ -409,11 +443,16 @@
             }
         },
 
-        makeDraggable(panel, handle) {
+        makeDraggable(panel, handle, storageKey = 'lp_panel_state') {
             let isDragging = false;
             let startX, startY, initialLeft, initialTop;
 
             handle.addEventListener('mousedown', e => {
+                // 检查是否固定
+                const panelState = GM_getValue(storageKey, { pinned: false });
+                if (panelState.pinned) {
+                    return; // 固定状态下不允许拖动
+                }
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
@@ -432,6 +471,13 @@
             });
 
             document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    // 保存位置到存储
+                    const panelState = GM_getValue(storageKey, {});
+                    panelState.top = panel.offsetTop;
+                    panelState.left = panel.offsetLeft;
+                    GM_setValue(storageKey, panelState);
+                }
                 isDragging = false;
                 handle.style.cursor = 'move';
             });
@@ -906,12 +952,19 @@
          * 创建详情页日志浮窗
          */
         createDetailLogPanel() {
+            const STORAGE_KEY = 'lp_detail_panel_state';
+
+            // 从存储读取位置
+            const panelState = GM_getValue(STORAGE_KEY, { top: 10, right: 10 });
+            const posStyle = panelState.left
+                ? `top: ${panelState.top}px; left: ${panelState.left}px;`
+                : `top: ${panelState.top || 10}px; right: ${panelState.right || 10}px;`;
+
             const panel = document.createElement('div');
             panel.id = 'lp-detail-log-panel';
             panel.style.cssText = `
                 position: fixed;
-                top: 10px;
-                right: 10px;
+                ${posStyle}
                 width: 350px;
                 max-height: 250px;
                 background: rgba(255,255,255,0.95);
@@ -931,8 +984,31 @@
                 color: white;
                 font-weight: bold;
                 font-size: 13px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: move;
             `;
-            header.textContent = '📝 猎聘助手 - 详情页日志';
+
+            // 图钉按钮
+            const pinBtn = document.createElement('span');
+            pinBtn.style.cssText = 'cursor:pointer; font-size:14px;';
+            const pinState = GM_getValue(STORAGE_KEY, { pinned: false });
+            pinBtn.textContent = pinState.pinned ? '📌' : '📍';
+            pinBtn.title = pinState.pinned ? '已固定（点击取消）' : '未固定（点击固定）';
+
+            pinBtn.onclick = (e) => {
+                e.stopPropagation();
+                const state = GM_getValue(STORAGE_KEY, { pinned: false });
+                state.pinned = !state.pinned;
+                GM_setValue(STORAGE_KEY, state);
+                pinBtn.textContent = state.pinned ? '📌' : '📍';
+                pinBtn.title = state.pinned ? '已固定（点击取消）' : '未固定（点击固定）';
+                Core.log(state.pinned ? '浮窗已固定' : '浮窗已取消固定', 'INFO');
+            };
+
+            header.innerHTML = '<span>📝 猎聘助手 - 详情页日志</span>';
+            header.appendChild(pinBtn);
 
             // 日志容器
             const logContainer = document.createElement('div');
@@ -949,6 +1025,9 @@
 
             // 绑定到UI.logContainer，让Core.log能输出到这里
             UI.logContainer = logContainer;
+
+            // 添加拖拽功能
+            UI.makeDraggable(panel, header, STORAGE_KEY);
 
             Core.log('详情页日志浮窗已创建', 'DEBUG');
         },
