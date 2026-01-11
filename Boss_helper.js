@@ -3266,20 +3266,41 @@
         const headhuntingElement = card.querySelector(".job-tag-icon");
         const altText = headhuntingElement ? headhuntingElement.alt : "";
 
-        const includeMatch =
-          state.includeKeywords.length === 0 ||
-          state.includeKeywords.some((kw) => kw && title.includes(kw.trim()));
+        // 职位名关键字匹配
+        let includeMatch = true;
+        let matchedIncludeKey = null;
+        if (state.includeKeywords.length > 0) {
+          matchedIncludeKey = state.includeKeywords.find(kw => kw && title.includes(kw.trim().toLowerCase()));
+          includeMatch = !!matchedIncludeKey;
+          if (!includeMatch) {
+            Core.log(`跳过: 职位名不匹配 - ${card.querySelector(".job-name")?.textContent}`, "SKIP");
+            return false;
+          }
+          Core.log(`✅ 职位名匹配关键字"${matchedIncludeKey}": ${card.querySelector(".job-name")?.textContent}`, "DEBUG");
+        }
 
-        const locationMatch =
-          state.locationKeywords.length === 0 ||
-          state.locationKeywords.some(
-            (kw) => kw && addressText.includes(kw.trim())
-          );
+        // 工作地关键字匹配
+        let locationMatch = true;
+        let matchedLocationKey = null;
+        if (state.locationKeywords.length > 0) {
+          matchedLocationKey = state.locationKeywords.find(kw => kw && addressText.includes(kw.trim().toLowerCase()));
+          locationMatch = !!matchedLocationKey;
+          if (!locationMatch) {
+            Core.log(`跳过: 工作地不匹配 (${addressText}) - ${card.querySelector(".job-name")?.textContent}`, "SKIP");
+            return false;
+          }
+          Core.log(`✅ 工作地匹配关键字"${matchedLocationKey}": ${addressText}`, "DEBUG");
+        }
 
+        // 猎头过滤
         const excludeHeadhunterMatch =
           !excludeHeadhunters || !altText.includes("猎头");
+        if (!excludeHeadhunterMatch) {
+          Core.log(`跳过猎头职位: ${card.querySelector(".job-name")?.textContent}`, "SKIP");
+          return false;
+        }
 
-        return includeMatch && locationMatch && excludeHeadhunterMatch;
+        return true;
       });
 
       if (!state.jobList.length) {
