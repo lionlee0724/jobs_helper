@@ -1,0 +1,34 @@
+# Dependencies & build
+node_modules/
+dist/
+.vite/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local / temp
+.tmp/
+.tmp-*
+.scratch/
+
+# Secrets & local probes
+*.cookies.json
+*.cookies.txt
+boss-selector-probe-*.json
+.env
+.env.*
+!.env.example
+
+# AI / agent tooling (local only — not product source)
+.trellis/
+.claude/
+.agents/
+.codex/
+.pi/
+.openteams/
+AGENTS.md
+CONTEXT.md

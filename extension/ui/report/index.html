@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>投递记录与统计 · BOSS 求职副驾驶</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div>
+          <h1>投递记录与统计</h1>
+          <p class="sub">数据仅存本机 · 无需导出 JSON 即可查看</p>
+        </div>
+        <div class="top-actions">
+          <button type="button" id="btn-refresh">刷新</button>
+          <button type="button" id="btn-export-csv" class="ghost">导出 CSV</button>
+          <button type="button" id="btn-export" class="ghost">导出 JSON 备份</button>
+        </div>
+      </header>
+
+      <section class="cards" id="kpi">
+        <div class="card"><b id="k-seen">—</b><span>今日浏览</span></div>
+        <div class="card"><b id="k-suitable">—</b><span>今日合适</span></div>
+        <div class="card"><b id="k-unsuitable">—</b><span>今日不合适</span></div>
+        <div class="card"><b id="k-opened">—</b><span>今日开聊</span></div>
+        <div class="card"><b id="k-replies">—</b><span>今日回复</span></div>
+        <div class="card"><b id="k-resumes">—</b><span>今日发简历</span></div>
+        <div class="card"><b id="k-rate">—</b><span>近7日合适率</span></div>
+        <div class="card"><b id="k-open-ok">—</b><span>开聊成功率</span></div>
+        <div class="card"><b id="k-open-fail">—</b><span>开聊失败率</span></div>
+        <div class="card"><b id="k-errors">—</b><span>今日错误</span></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>近 7 日合适率</h2>
+        </div>
+        <div class="rate-chart-wrap" aria-label="近7日合适率折线图（只读）">
+          <canvas id="rate-chart" width="720" height="180"></canvas>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>近 7 日趋势</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>浏览</th>
+                <th>合适</th>
+                <th>不合适</th>
+                <th>开聊</th>
+                <th>回复</th>
+                <th>发简历</th>
+                <th>错误</th>
+              </tr>
+            </thead>
+            <tbody id="trend-body">
+              <tr><td colspan="8" class="muted">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>职位记录</h2>
+          <div class="filters">
+            <select id="filter-outcome">
+              <option value="all">全部结果</option>
+              <option value="opened">已开聊</option>
+              <option value="skipped">已跳过</option>
+              <option value="failed">失败</option>
+              <option value="open_failed">开聊失败(可重试)</option>
+              <option value="pending">仅浏览/未终态</option>
+              <option value="suitable">匹配合适</option>
+              <option value="unsuitable">匹配不合适</option>
+            </select>
+            <input type="search" id="filter-q" placeholder="搜公司 / 职位 / 理由…" />
+          </div>
+        </div>
+        <p class="hint" id="jobs-hint">—</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>职位</th>
+                <th>公司</th>
+                <th>薪资</th>
+                <th>匹配</th>
+                <th>结果</th>
+                <th>理由</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body">
+              <tr><td colspan="7" class="muted">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>会话跟进</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>公司 / 职位</th>
+                <th>状态</th>
+                <th>最近动作</th>
+                <th>发简历</th>
+              </tr>
+            </thead>
+            <tbody id="threads-body">
+              <tr><td colspan="4" class="muted">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="err" class="err" hidden></p>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
