@@ -14,8 +14,18 @@ describe('canStart', () => {
     expect(r.ok).toBe(false)
   })
 
-  // 不变量：绝不在「无明确日上限」时启动。
-  // 2026-07 风控档位上线后，上限可由预设提供；仅 custom 档需要手填。
+  // 不变量：绝不在「无显式日上限」时启动（R11：选档预填 ≠ 已保存）。
+  it('rejects missing daily limit even under conservative preset', () => {
+    const r = canStart({
+      enabled: true,
+      riskProfile: 'conservative',
+      minIntervalMs: 1000,
+      maxIntervalMs: 2000,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toMatch(/日开聊上限|保存/)
+  })
+
   it('rejects missing daily limit under custom profile', () => {
     const r = canStart({
       enabled: true,
@@ -26,9 +36,9 @@ describe('canStart', () => {
     expect(r.ok).toBe(false)
   })
 
-  it('accepts preset-supplied limit when fields left blank', () => {
+  it('does not accept preset-only blank limit', () => {
     const r = canStart({ enabled: true, riskProfile: 'conservative' })
-    expect(r).toEqual({ ok: true })
+    expect(r.ok).toBe(false)
   })
 
   it('custom profile with no limits at all is rejected', () => {
@@ -47,7 +57,7 @@ describe('canStart', () => {
     expect(r.ok).toBe(false)
   })
 
-  it('accepts complete policy', () => {
+  it('accepts complete policy with explicit daily limit', () => {
     const r = canStart({
       enabled: true,
       dailyOpenChatLimit: 30,

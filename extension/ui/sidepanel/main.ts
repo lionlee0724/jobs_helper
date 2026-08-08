@@ -1,7 +1,6 @@
 ﻿import type { Policy, Profile, MessageAssistConfig, RunState } from '../../shared/types'
 import type { ResponseMessage } from '../../shared/messages'
 
-import { ensureHostPermissionForLlm, testLlmConnection } from '../../background/llm-client'
 import {
   normalizeExcludeKeywords,
   normalizeExpectCities,
@@ -13,6 +12,7 @@ import {
   summarizeHardRulesForUi,
   DEFAULT_MIN_MATCH_SCORE,
 } from '../../domain/match-decision'
+import { riskPresetOf } from '../../domain/risk'
 import { applyDocumentTheme, type UiThemePreference } from '../../ui/shared/theme'
 import { matchSidepanelShortcut, normalizeShortcutsEnabled } from '../../ui/shared/ui-shortcuts'
 import { buildExportCsv, downloadTextFile, type ExportAllPayload } from '../../shared/csv-export'
@@ -26,6 +26,8 @@ let live: {
   run: RunState
   todayOpened: number
   todayReplies: number
+  todayHardRejected: number
+  sessionHardRejected: number
   summary: any
   events: any[]
   profileSyncedAt: number | null
@@ -41,6 +43,8 @@ let live: {
   run: { status: 'idle' },
   todayOpened: 0,
   todayReplies: 0,
+  todayHardRejected: 0,
+  sessionHardRejected: 0,
   summary: null,
   events: [],
   profileSyncedAt: null,
@@ -161,7 +165,7 @@ function O() {
     <div id="panel-msg" class="tab-panel" hidden>
       <section>
         <h2>消息助手</h2>
-        <p class="sub">跟进主路径在此。职位线默认<strong>不</strong>自动回消息（可在策略打开「职位线内跟进」）。消息页右下角浮层可处理一轮/当前会话。</p>
+        <p class="sub">跟进可走两条入口：职位线内环 B（默认开，与开聊交错）与本页消息助手；处置共用同一内核。消息页右下角浮层可处理一轮/当前会话。</p>
         <div class="row">
           <label><span>自治级别</span>
             <select id="msgAutonomy">
@@ -211,8 +215,8 @@ function O() {
           <span>允许自动执行（开始前仍须点「开始」）</span>
         </label>
         <label class="switch">
-          <input type="checkbox" id="followUpInJobRun" />
-          <span>职位线内跟进（环 B，默认关）</span>
+          <input type="checkbox" id="followUpInJobRun" checked />
+          <span>职位线内跟进（环 B，默认开）</span>
         </label>
         <div class="row">
           <label><span>风险档</span>
@@ -223,8 +227,8 @@ function O() {
               <option value="custom">自定义</option>
             </select>
           </label>
-          <label><span>日开聊上限</span>
-            <input type="number" id="dailyLimit" min="1" placeholder="留空用档位" />
+          <label><span>日开聊上限（必填保存）</span>
+            <input type="number" id="dailyLimit" min="1" placeholder="选档预填，须保存" />
           </label>
         </div>
         <div class="row">
@@ -266,6 +270,7 @@ function O() {
           </label>
         </div>
         <p class="sub">硬否在 LLM 前生效；字段留空=不启用该条（证据不足不拒绝）。</p>
+        <p class="sub" id="hard-reject-stats">硬否跳过：本 Run — · 今日 —</p>
 
         <details id="policy-advanced" class="policy-advanced">
           <summary>高级（间隔 / 回复日上限 / 关键词阈值）</summary>
@@ -349,6 +354,15 @@ function O() {
       const w = $('msg-full-auto-warn')
       if (w) w.hidden = t.value !== 'full_auto'
     }
+    if (t.id === 'riskProfile') {
+      const preset = riskPresetOf(t.value as any)
+      if (preset) {
+        const dl = $('dailyLimit')
+        if (dl && !String(dl.value || '').trim()) {
+          dl.value = String(preset.dailyOpenChatLimit)
+        }
+      }
+    }
   }, true)
   C()
 }
@@ -358,7 +372,7 @@ function M(policy: Policy, llm: any, profile: Profile | null) {
   // fill policy fields
   $('enabled')!.checked = !!policy.enabled
   const fu = $('followUpInJobRun')
-  if (fu) fu.checked = !!policy.followUpInJobRun
+  if (fu) fu.checked = policy.followUpInJobRun !== false
   $('dailyLimit')!.value = policy.dailyOpenChatLimit != null ? String(policy.dailyOpenChatLimit) : ''
   $('replyLimit')!.value = policy.dailyReplyLimit != null ? String(policy.dailyReplyLimit) : ''
   const minMs = policy.minIntervalMs
@@ -431,7 +445,11 @@ function L() {
 function T() {
   const e = $('run-status')
   e!.className = `status ${live.run.status === 'running' ? 'ok' : ''}`
-  e!.textContent = `${R(live.run)}\n\n今日开聊 ${live.todayOpened} · 回复 ${live.todayReplies}`
+  e!.textContent = `${R(live.run)}\n\n今日开聊 ${live.todayOpened} · 回复 ${live.todayReplies}\n硬否跳过：本 Run ${live.sessionHardRejected} · 今日 ${live.todayHardRejected}`
+  const hardEl = $('hard-reject-stats')
+  if (hardEl) {
+    hardEl.textContent = `硬否跳过：本 Run ${live.sessionHardRejected} · 今日 ${live.todayHardRejected}`
+  }
   const t = live.summary?.today
   if (t) {
     $('stat-seen')!.textContent = String(t.seen || 0)
@@ -492,6 +510,8 @@ async function y(forceForm = false) {
       live.run = run.state
       live.todayOpened = run.todayOpened || 0
       live.todayReplies = run.todayReplies || 0
+      live.todayHardRejected = run.todayHardRejected || 0
+      live.sessionHardRejected = run.sessionHardRejected || 0
       live.anomaly = run.anomaly ?? null
       live.notice = run.notice ?? null
     }
@@ -582,7 +602,7 @@ function C() {
     const e = $('btn-test-llm')
     if (!e) return
     e.disabled = true
-    i('正在申请网站访问权限，并在侧栏上下文直接请求 LLM…')
+    i('正在经扩展后台申请权限并测试 LLM…')
     try {
       const t = {
         baseUrl: $('baseUrl')!.value.trim(),
@@ -591,11 +611,14 @@ function C() {
       }
       if (!t.baseUrl || !t.apiKey || !t.model) throw new Error('请先填写 Base URL / API Key / Model')
       await b()
-      const perm = await ensureHostPermissionForLlm(t.baseUrl, { requestIfMissing: true })
-      if (!perm.granted) throw new Error([`未授予访问 ${perm.originPattern}`, `当前已授予：${perm.grantedOrigins.join(', ') || '（无）'}`].join('\n'))
-      const l = await testLlmConnection(t)
+      const res = await send({ type: 'llm/test', llm: t })
+      if (res.type === 'error') throw new Error(res.error)
+      if (res.type !== 'llm/test' || !res.ok) throw new Error('LLM 测试无有效响应')
       u = false
-      i(`LLM 正常 · ${l.latencyMs} ms · 权限 ${l.originPattern} · 回复：${l.reply}`, 'ok')
+      i(
+        `LLM 正常 · ${res.latencyMs} ms${res.originPattern ? ' · 权限 ' + res.originPattern : ''} · 回复：${res.reply}`,
+        'ok',
+      )
     } catch (t) {
       i(t instanceof Error ? t.message : String(t), 'err')
     } finally {
@@ -947,7 +970,7 @@ async function w(): Promise<Policy> {
 
   const policy: Policy = {
     enabled: $('enabled')!.checked,
-    followUpInJobRun: $('followUpInJobRun')?.checked === true ? true : undefined,
+    followUpInJobRun: $('followUpInJobRun')?.checked !== false,
     dailyOpenChatLimit: parseInt($('dailyLimit')!.value) || undefined,
     dailyReplyLimit: parseInt($('replyLimit')!.value) || undefined,
     minIntervalMs,

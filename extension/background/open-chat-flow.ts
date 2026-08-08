@@ -37,6 +37,7 @@ import {
   BatchOutcome,
   MATCH_LLM_FAIL_CIRCUIT,
   bumpMatchLlmFailure,
+  bumpSessionHardRejected,
   bumpSessionOpened,
   clearMatchLlmFailures,
   consecutiveMatchLlmFailures,
@@ -512,6 +513,9 @@ export async function processCardInEphemeralTab(opts: {
 
       if (!match.suitable) {
         // 可解释跳过：llm_error / hard_reject / 低分 / 其它
+        if (decision.via === 'hard_reject') {
+          await bumpSessionHardRejected(gen)
+        }
         const head = match.reasons[0] || ''
         const reasonSummary =
           decision.via === 'llm_error'

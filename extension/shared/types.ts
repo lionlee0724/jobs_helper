@@ -106,8 +106,8 @@ export type Policy = {
 
   /**
    * 职位线 tick 内是否交替跑环 B（会话跟进）。
-   * 默认 false/undefined = 关闭；跟进交给消息助手。
-   * true = 与开聊交替跟进（旧行为）。
+   * 默认 true/undefined = 开启（与开聊交错，Design Spec）。
+   * false = 关闭；仍可用消息助手跟进。
    */
   followUpInJobRun?: boolean
 
@@ -177,6 +177,8 @@ export type RunState =
       sessionOpened?: number
       /** 本轮 run 已自动回复次数（startRun 清零） */
       sessionReplies?: number
+      /** 本轮 run 硬否跳过次数（startRun 清零） */
+      sessionHardRejected?: number
     }
   | { status: 'paused'; reason: string; workerTabId?: number }
 
@@ -290,6 +292,8 @@ export type DailyStats = {
   seen: number
   matchedSuitable: number
   matchedUnsuitable: number
+  /** 硬否跳过（via=hard_reject） */
+  hardRejected: number
   opened: number
   replies: number
   resumesSent: number
@@ -308,6 +312,7 @@ export type AnalyticsSummary = {
 export const DEFAULT_POLICY: Policy = {
   enabled: false,
   riskProfile: 'conservative',
+  followUpInJobRun: true,
 }
 
 export const DEFAULT_LLM: LlmConfig = {

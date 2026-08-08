@@ -101,6 +101,10 @@ export type ResponseMessage =
       state: RunState
       todayOpened: number
       todayReplies: number
+      /** 今日硬否跳过 */
+      todayHardRejected?: number
+      /** 本 Run 硬否跳过 */
+      sessionHardRejected?: number
       /** 异常冷却（若有且未到期） */
       anomaly?: {
         kind: string
@@ -139,6 +143,7 @@ export type ResponseMessage =
       url: string
       reply: string
       latencyMs: number
+      originPattern?: string
     }
   | { type: 'messageAssist/get'; config: MessageAssistConfig }
   | {

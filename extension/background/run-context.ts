@@ -124,12 +124,16 @@ export async function setPhase(phase: string, gen?: number) {
 export async function getSessionCounters(): Promise<{
   sessionOpened: number
   sessionReplies: number
+  sessionHardRejected: number
 }> {
   const state = await kv.getRunState()
-  if (state.status !== 'running') return { sessionOpened: 0, sessionReplies: 0 }
+  if (state.status !== 'running') {
+    return { sessionOpened: 0, sessionReplies: 0, sessionHardRejected: 0 }
+  }
   return {
     sessionOpened: state.sessionOpened ?? 0,
     sessionReplies: state.sessionReplies ?? 0,
+    sessionHardRejected: state.sessionHardRejected ?? 0,
   }
 }
 
@@ -150,6 +154,16 @@ export async function bumpSessionReplies(gen?: number): Promise<void> {
   await kv.setRunState({
     ...state,
     sessionReplies: (state.sessionReplies ?? 0) + 1,
+  })
+}
+
+export async function bumpSessionHardRejected(gen?: number): Promise<void> {
+  if (gen != null && !(await isStillRunning(gen))) return
+  const state = await kv.getRunState()
+  if (state.status !== 'running') return
+  await kv.setRunState({
+    ...state,
+    sessionHardRejected: (state.sessionHardRejected ?? 0) + 1,
   })
 }
 

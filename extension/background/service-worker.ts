@@ -27,7 +27,7 @@ import {
   clearAllFailedOpenForRetry,
   clearFailedOpenForRetry,
 } from '../data/repos/jobs'
-import { testLlmConnection } from './llm-client'
+import { ensureHostPermissionForLlm, testLlmConnection } from './llm-client'
 import {
   importExistingThreads,
   startAll as startMsgAssistAll,
@@ -242,8 +242,20 @@ async function handleMessage(msg: RequestMessage) {
       return { type: 'profile/sync', profile }
     }
     case 'llm/test': {
-      // 侧栏「测试 LLM」已改为本地直接测；此分支保留兼容（无用户手势时 request 可能失败）
+      // 侧栏经消息面调用；requestIfMissing 依赖扩展页用户手势传递（尽力而为）
       const llm = msg.llm ?? (await kv.getLlmConfig())
+      const perm = await ensureHostPermissionForLlm(llm.baseUrl, {
+        requestIfMissing: true,
+      })
+      if (!perm.granted) {
+        return {
+          type: 'error',
+          error: [
+            `未授予访问 ${perm.originPattern}`,
+            `当前已授予：${perm.grantedOrigins.join(', ') || '（无）'}`,
+          ].join('\n'),
+        }
+      }
       const result = await testLlmConnection(llm)
       return {
         type: 'llm/test',
@@ -251,6 +263,7 @@ async function handleMessage(msg: RequestMessage) {
         url: result.url,
         reply: result.reply,
         latencyMs: result.latencyMs,
+        originPattern: result.originPattern ?? perm.originPattern,
       }
     }
     case 'analytics/summary': {

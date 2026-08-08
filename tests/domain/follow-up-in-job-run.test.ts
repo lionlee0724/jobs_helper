@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { isFollowUpInJobRunEnabled } from '../../extension/domain/policy'
 
 describe('isFollowUpInJobRunEnabled', () => {
-  it('defaults off', () => {
-    expect(isFollowUpInJobRunEnabled({ enabled: true })).toBe(false)
-    expect(isFollowUpInJobRunEnabled({ enabled: true, followUpInJobRun: false })).toBe(false)
-    expect(isFollowUpInJobRunEnabled({ enabled: true, followUpInJobRun: undefined })).toBe(false)
+  it('defaults on (Spec interleaved follow-up)', () => {
+    expect(isFollowUpInJobRunEnabled({ enabled: true })).toBe(true)
+    expect(isFollowUpInJobRunEnabled({ enabled: true, followUpInJobRun: undefined })).toBe(true)
   })
 
-  it('only true when explicitly enabled', () => {
+  it('only false when explicitly disabled', () => {
+    expect(isFollowUpInJobRunEnabled({ enabled: true, followUpInJobRun: false })).toBe(false)
     expect(isFollowUpInJobRunEnabled({ enabled: true, followUpInJobRun: true })).toBe(true)
   })
 })

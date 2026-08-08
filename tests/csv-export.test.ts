@@ -43,6 +43,7 @@ const sampleDay: DailyStats = {
   seen: 10,
   matchedSuitable: 3,
   matchedUnsuitable: 1,
+  hardRejected: 0,
   opened: 2,
   replies: 1,
   resumesSent: 0,

@@ -42,17 +42,14 @@ import {
 } from './tab-runtime'
 
 /**
- * 环 B：listFollowable → open_chat_session → 游标 → 意图 → resume/reply
- * S1：定位失败 → thread error，不串会话
+ * 环 B：listFollowable → ephemeral chat tab → FollowUpKernel → restore list。
+ * 处置逻辑只走 processFollowUpOnTab（ADR-0001），禁止再内联 intent/LLM/send。
  */
 export async function runFollowUpBatch(
   workerTabId: number,
   gen: number,
 ): Promise<BatchOutcome> {
   if (!(await isStillRunning(gen))) return 'none'
-
-  const policy = await kv.getPolicy()
-  const daily = await getDaily()
 
   await setPhase('follow_up', gen)
   const threads = await threadsRepo.listFollowableThreads()
@@ -62,258 +59,16 @@ export async function runFollowUpBatch(
   const listUrl = await resolveListUrl(workerTabId)
   const listLabel = await resolveListLabel()
 
-  // 补充 jobTitle（旧 thread 可能只有 jobId）
-  let jobTitle = thread.jobTitle
-  let company = thread.company
-  if (thread.jobId) {
-    const jobRec = await jobsRepo.getJob(thread.jobId)
-    if (jobRec) {
-      if (!jobTitle) jobTitle = jobRec.title
-      if (!company) company = jobRec.company
-    }
-  }
-
   const session = await withEphemeralChatTab(gen, async (chatTabId) => {
-    // auth on chat tab
     if (await detectAndPauseIfAuthLost(chatTabId, gen)) {
       return { kind: 'paused' as const }
     }
-
-    // R1：必须先定位目标会话
-    const opened = await sendToTabOnce(chatTabId, {
-      op: 'open_chat_session',
-      match: {
-        company,
-        jobTitle,
-        jobId: thread.jobId,
-      },
+    const result = await processFollowUpOnTab(chatTabId, thread, {
+      via: 'job_run',
     })
-    if (!opened.ok) {
-      // S1：软失败，累计 3 次才 error（消息列表偶发匹配失败）
-      const fate = await threadsRepo.markLocateFail(
-        thread.id,
-        opened.error || '会话定位失败（S1）',
-      )
-      await appendEvent({
-        type: 'error',
-        threadId: thread.id,
-        jobId: thread.jobId,
-        payload: {
-          error: opened.error,
-          op: 'open_chat_session',
-          s1: true,
-          fate,
-        },
-      })
-      return { kind: 's1' as const }
-    }
-    // 定位成功清零失败计数
-    await threadsRepo.markThread(thread.id, { locateFails: 0, lastError: undefined })
-    await sleep(800)
-
-    const msgs = await sendToTabOnce(chatTabId, {
-      op: 'read_peer_messages',
-      limit: 8,
-    })
-    if (!msgs.ok) return { kind: 'msg_fail' as const, error: msgs.error }
-
-    const list = (msgs.data as string[]) || []
-    const latest = list[list.length - 1] || ''
-    if (!latest) {
-      await threadsRepo.markThread(thread.id, {
-        status: 'waiting_peer',
-        lastActionAt: Date.now(),
-      })
-      return { kind: 'empty' as const }
-    }
-
-    const fp = fingerprintPeer(latest)
-    if (
-      thread.lastHandledPeerFingerprint &&
-      thread.lastHandledPeerFingerprint === fp
-    ) {
-      // 同消息已处理：软跳过
-      await threadsRepo.markThread(thread.id, {
-        status: 'waiting_peer',
-        lastActionAt: Date.now(),
-      })
-      return { kind: 'empty' as const }
-    }
-
-    const intent = classifyIntent(latest)
-    const profile = await kv.getProfile()
-    if (!profile) return { kind: 'empty' as const }
-
-    // system：推进游标，不回
-    if (intent === 'system') {
-      await threadsRepo.markPeerHandled(thread.id, fp, {
-        status: 'waiting_peer',
-        lastPeerAt: Date.now(),
-        lastActionAt: Date.now(),
-      })
-      return { kind: 'empty' as const }
-    }
-
-    if (intent === 'reject') {
-      await threadsRepo.markPeerHandled(thread.id, fp, {
-        status: 'done',
-        lastPeerAt: Date.now(),
-        lastActionAt: Date.now(),
-      })
-      return { kind: 'done' as const }
-    }
-
-    // 分级自治：薪资/面试/联系方式绝不代答，挂起等人工
-    const assistCfg = await kv.getMessageAssist()
-    const autonomy = assistCfg.autonomy ?? 'graded'
-    const handling = handlingFor(intent)
-    const needsHandoff =
-      autonomy === 'full_auto'
-        ? false
-        : autonomy === 'resume_only'
-          ? handling !== 'auto_action'
-          : handling === 'handoff'
-
-    if (needsHandoff) {
-      const reason = handoffReason(intent)
-      await threadsRepo.markPeerHandled(thread.id, fp, {
-        status: 'handoff',
-        lastPeerAt: Date.now(),
-        lastActionAt: Date.now(),
-        lastError: `待人工：${reason}`,
-      })
-      await appendEvent({
-        type: 'handoff',
-        threadId: thread.id,
-        jobId: thread.jobId,
-        payload: { intent, reason, peerText: latest.slice(0, 200) },
-      })
-      return { kind: 'done' as const }
-    }
-
-    if (intent === 'resume_request') {
-      const r = await sendToTabOnce(chatTabId, { op: 'send_resume' })
-      if (!r.ok) {
-        await threadsRepo.markThreadError(
-          thread.id,
-          r.error || '发简历失败',
-        )
-        await appendEvent({
-          type: 'error',
-          threadId: thread.id,
-          payload: { error: r.error, op: 'send_resume' },
-        })
-        return { kind: 'done' as const }
-      }
-      await threadsRepo.markPeerHandled(thread.id, fp, {
-        resumeSentAt: Date.now(),
-        lastActionAt: Date.now(),
-        lastPeerAt: Date.now(),
-        status: 'waiting_peer',
-      })
-      await appendEvent({
-        type: 'resume_sent',
-        threadId: thread.id,
-        jobId: thread.jobId,
-      })
-      return { kind: 'done' as const }
-    }
-
-    // other → 文字回复；session + daily 双门闩
-    const replyGuard = canReplyMoreToday(policy, daily.replies)
-    if (!replyGuard.ok) {
-      await stopRun(replyGuard.reason)
-      return { kind: 'paused' as const }
-    }
-    const { sessionReplies } = await getSessionCounters()
-    const sessReply = canReplyMoreThisSession(policy, sessionReplies)
-    if (!sessReply.ok) {
-      await stopRun(sessReply.reason)
-      return { kind: 'paused' as const }
-    }
-
-    const job = thread.jobId ? await jobsRepo.getJob(thread.jobId) : undefined
-    try {
-      const llm = await kv.getLlmConfig()
-      const raw = await chatCompletion(
-        llm,
-        buildChatReplyMessages({
-          profile,
-          job: job
-            ? {
-                id: job.id,
-                title: job.title,
-                company: job.company,
-                salary: job.salary,
-                city: job.city,
-                desc: job.desc,
-                source: job.source,
-              }
-            : undefined,
-          peerText: latest,
-          history: list.slice(-5).join('\n'),
-          intent,
-        }),
-      )
-      if (!(await isStillRunning(gen))) return { kind: 'empty' as const }
-      const text = parseChatReply(raw)
-
-      // 出站护栏：模型可能复述简历里的联系方式，发送前再挡一道
-      const screen = screenOutgoingText(text)
-      if (!screen.ok) {
-        await threadsRepo.markPeerHandled(thread.id, fp, {
-          status: 'waiting_peer',
-          lastPeerAt: Date.now(),
-          lastActionAt: Date.now(),
-          lastError: `待人工：回复内容含${screen.violation}，已拦截`,
-        })
-        await appendEvent({
-          type: 'handoff',
-          threadId: thread.id,
-          jobId: thread.jobId,
-          payload: { reason: `拦截出站${screen.violation}`, intent },
-        })
-        return { kind: 'done' as const }
-      }
-
-      const sent = await sendToTabOnce(chatTabId, {
-        op: 'send_text',
-        text,
-        timing: humanTiming(policy),
-      })
-      if (!sent.ok) {
-        await appendEvent({
-          type: 'error',
-          threadId: thread.id,
-          payload: { error: sent.error, op: 'send_text' },
-        })
-        // 不推进游标，下次可重试
-        return { kind: 'done' as const }
-      }
-      await threadsRepo.markPeerHandled(thread.id, fp, {
-        lastActionAt: Date.now(),
-        lastPeerAt: Date.now(),
-        status: 'waiting_peer',
-      })
-      await bumpSessionReplies(gen)
-      await appendEvent({
-        type: 'chat_reply',
-        threadId: thread.id,
-        jobId: thread.jobId,
-        payload: { text: text.slice(0, 200) },
-      })
-      return { kind: 'done' as const }
-    } catch (e) {
-      await appendEvent({
-        type: 'error',
-        threadId: thread.id,
-        payload: { error: e instanceof Error ? e.message : String(e) },
-      })
-      return { kind: 'empty' as const }
-    }
+    return { kind: 'kernel' as const, result }
   })
 
-  // 跟进结束后强制列表 worker 回到锁定分类
   if (await isStillRunning(gen)) {
     await ensureOnListPage(workerTabId, listUrl, gen, listLabel)
   }
@@ -328,16 +83,36 @@ export async function runFollowUpBatch(
   }
 
   if (session.value.kind === 'paused') return 'none'
-  if (session.value.kind === 's1') return 'progress' // soft/hard locate fail，换下一个
-  if (session.value.kind === 'msg_fail') {
+
+  const action = session.value.result.action
+  if (action === 'reply_cap') {
+    await stopRun(session.value.result.detail || '已达回复上限')
+    return 'none'
+  }
+  if (action === 'read_fail') {
     await appendEvent({
       type: 'error',
       threadId: thread.id,
-      payload: { error: session.value.error },
+      payload: {
+        error: session.value.result.detail,
+        op: 'read_peer_messages',
+        via: 'job_run',
+      },
     })
     return 'soft_fail'
   }
-  if (session.value.kind === 'done') return 'progress'
+  if (
+    action === 'locate_retry' ||
+    action === 'locate_dead' ||
+    action === 'resume_sent' ||
+    action === 'resume_fail' ||
+    action === 'handoff' ||
+    action === 'mark_done_reject' ||
+    action === 'replied' ||
+    action === 'send_fail'
+  ) {
+    return 'progress'
+  }
   return 'none'
 }
 
@@ -366,14 +141,14 @@ type ProcessFollowUpOpts = {
   /** 已在当前右侧会话：跳过 open_chat_session */
   skipOpen?: boolean
   /** 事件 via 标记 */
-  via?: 'message_assist' | 'current_session'
+  via?: 'message_assist' | 'current_session' | 'job_run'
   /** 队列路径：处理前把 lastActionAt 沉底，避免死循环 */
   sinkToBottom?: boolean
 }
 
 /**
  * 单会话跟进内核：open（可选）→ 读 peer → 意图 → resume/reply/handoff。
- * 「处理一轮」与「处理当前会话」共用，禁止复制大段。
+ * 环 B / 处理一轮 / 处理当前会话共用，禁止复制大段。
  */
 export async function processFollowUpOnTab(
   chatTabId: number,

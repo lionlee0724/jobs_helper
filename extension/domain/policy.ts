@@ -4,24 +4,24 @@ import { effectivePolicy } from './risk'
 /**
  * 限速门闩。
  *
- * 所有判定都基于**预设补齐后**的策略：用户选了风控档位即可启动，
- * 不必逐项手填；只有 custom 档才需要把必填项填完。
+ * 日开聊上限必须是**用户已保存的显式值**（R11）：选风控档只预填，不代替保存。
+ * 间隔等仍可用 effectivePolicy 由档位补齐。
  */
 export function canStart(rawPolicy: Policy): GuardResult {
   if (!rawPolicy.enabled) {
     return { ok: false, reason: '请先开启「启用自动执行」开关' }
   }
-  const policy = effectivePolicy(rawPolicy)
   if (
-    policy.dailyOpenChatLimit == null ||
-    !Number.isFinite(policy.dailyOpenChatLimit) ||
-    policy.dailyOpenChatLimit <= 0
+    rawPolicy.dailyOpenChatLimit == null ||
+    !Number.isFinite(rawPolicy.dailyOpenChatLimit) ||
+    rawPolicy.dailyOpenChatLimit <= 0
   ) {
     return {
       ok: false,
-      reason: '请填写有效的「日开聊上限」（正整数），或选一个风控档位',
+      reason: '请填写并保存有效的「日开聊上限」（正整数）；选档仅预填，需点「保存策略」',
     }
   }
+  const policy = effectivePolicy(rawPolicy)
   if (
     policy.minIntervalMs == null ||
     policy.maxIntervalMs == null ||
@@ -102,12 +102,12 @@ export function canReplyMoreThisSession(
 
 /**
  * 职位线内环 B（跟进）是否开启。
- * 默认关闭：undefined/false → off；仅显式 true 开启。
+ * 默认开启（Spec：与开聊交错）：undefined → on；仅显式 false 关闭。
  */
 export function isFollowUpInJobRunEnabled(
   policy: Pick<Policy, 'followUpInJobRun'> | Policy,
 ): boolean {
-  return policy.followUpInJobRun === true
+  return policy.followUpInJobRun !== false
 }
 
 /**

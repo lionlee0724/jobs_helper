@@ -44,6 +44,37 @@ describe('keywordMatchPasses', () => {
   })
 })
 
+describe('keywordScore cap contract', () => {
+  it('keywords_only channel never exceeds 60', () => {
+    const rich: Profile = {
+      ...profile,
+      skills: [
+        '项目管理',
+        '销售管理',
+        '产业园',
+        'ToB',
+        '客户拓展',
+        '商务谈判',
+        '园区运营',
+        '大客户',
+      ],
+    }
+    const job: Job = {
+      id: 'cap',
+      title: '产业园 ToB 销售管理 项目管理 客户拓展 商务谈判 园区运营 大客户',
+      company: 'x',
+      desc: '项目管理 销售管理 产业园 ToB 客户拓展 商务谈判 园区运营 大客户 全部命中',
+      source: 'current',
+    }
+    const d = decideJobMatch({
+      profile: rich,
+      job,
+      policy: { enabled: true, matchMode: 'keywords_only', matchMinKeywordHits: 2 },
+    })
+    expect(d.score).toBeLessThanOrEqual(60)
+  })
+})
+
 describe('decideJobMatch balanced', () => {
   // 契约变更（2026-07）：关键词不再能「救回」LLM 的否定判断。
   // 旧行为（字面命中≥阈值即开聊）是「乱投」的直接成因，已按用户要求移除。

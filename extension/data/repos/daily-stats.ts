@@ -7,6 +7,7 @@ function emptyStats(day: string): DailyStats {
     seen: 0,
     matchedSuitable: 0,
     matchedUnsuitable: 0,
+    hardRejected: 0,
     opened: 0,
     replies: 0,
     resumesSent: 0,
@@ -17,7 +18,12 @@ function emptyStats(day: string): DailyStats {
 
 export async function getDaily(day = localDay()): Promise<DailyStats> {
   const row = await getDb().daily_stats.get(day)
-  return row ?? emptyStats(day)
+  if (!row) return emptyStats(day)
+  return {
+    ...emptyStats(day),
+    ...row,
+    hardRejected: row.hardRejected ?? 0,
+  }
 }
 
 export async function bumpDailyFromEvent(ev: EventRecord): Promise<void> {
@@ -39,6 +45,9 @@ export async function bumpDailyFromEvent(ev: EventRecord): Promise<void> {
     case 'job_matched':
       if (ev.payload?.suitable) cur.matchedSuitable += 1
       else cur.matchedUnsuitable += 1
+      if (ev.payload?.via === 'hard_reject') {
+        cur.hardRejected = (cur.hardRejected ?? 0) + 1
+      }
       break
     case 'job_skipped':
       break

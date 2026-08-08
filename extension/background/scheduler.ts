@@ -158,6 +158,7 @@ export async function startRun(): Promise<{ ok: true } | { ok: false; error: str
     lastTickAt: Date.now(),
     sessionOpened: 0,
     sessionReplies: 0,
+    sessionHardRejected: 0,
   })
   await appendEvent({
     type: 'run_start',
@@ -237,7 +238,7 @@ export async function tick() {
     if (authHit) return
     if (!(await isStillRunning(gen))) return
 
-    // 环 B：仅当 policy.followUpInJobRun === true（默认 off，跟进归消息助手）
+    // 环 B：默认 on（Spec 交错）；仅 followUpInJobRun === false 时跳过
     if (state.cursor.preferFollowUp && isFollowUpInJobRunEnabled(await kv.getPolicy())) {
       const follow = await runFollowUpBatch(state.workerTabId, gen)
       if (!(await isStillRunning(gen))) return
@@ -335,6 +336,9 @@ export async function getStatus() {
     state,
     todayOpened: daily.opened,
     todayReplies: daily.replies,
+    todayHardRejected: daily.hardRejected ?? 0,
+    sessionHardRejected:
+      state.status === 'running' ? state.sessionHardRejected ?? 0 : 0,
     analytics: await summaryTodayAndWeek(),
     anomaly: anomalyView,
     notice,

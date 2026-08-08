@@ -183,8 +183,8 @@ function keywordScore(hitCount: number, minHits: number): number {
   if (hitCount <= 0) return 0
   const need = Math.max(minHits, 1)
   const ratio = Math.min(1, hitCount / (need * 1.5)) // slightly more generous (was *2)
-  // 关键词单通道封顶 65：字面命中 + past-job profile insights can push higher
-  return Math.round(ratio * 65)
+  // 合同：关键词单通道封顶 60（字面命中 ≠ 方向匹配，不能单靠关键词冲高档）
+  return Math.round(ratio * 60)
 }
 
 /**
@@ -319,7 +319,7 @@ export function decideJobMatch(input: {
   }
 
   // 语义分为主（权重可配，默认 0.75），关键词为辅（1 - LLM 权重）
-  // 关键词单通道封顶 65 已在 keywordScore 中保留
+  // 关键词单通道封顶 60 已在 keywordScore 中保留
   const llmWeight = resolveMatchLlmWeight(input.policy)
   const kwWeight = 1 - llmWeight
   const llmScore = effectiveLlm.score
