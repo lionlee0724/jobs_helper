@@ -54,7 +54,7 @@ export function matchReasonSummary(j: JobRecord): string {
   }
   // 仅真低分（有 score 且非 llm_error）才标「低分」
   if (!j.match.suitable && score != null) {
-    return (`低分 ${score}${head ? ' · ' + head : ''}` || `低分 ${score}`).slice(0, 160)
+    return `低分 ${score}${head ? ' · ' + head : ''}`.slice(0, 160)
   }
   if (head) return reasons.slice(0, 2).join('；').slice(0, 160)
   if (score != null) return `分 ${score}`

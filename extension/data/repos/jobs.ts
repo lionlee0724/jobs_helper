@@ -59,7 +59,7 @@ export async function analyzePastJobs(): Promise<{
     const title = (job.title || '').trim()
     if (title) {
       bump(title, 2)
-      title.split(/[\/｜|·•、,，\-—_\s]+/).forEach((p) => bump(p, 2))
+      title.split(/[/｜|·•、,，\-—_\s]+/).forEach((p) => bump(p, 2))
     }
     const desc = (job.desc || '').slice(0, 1200)
     const phrases = desc.match(/[\u4e00-\u9fff]{2,8}/g) || []

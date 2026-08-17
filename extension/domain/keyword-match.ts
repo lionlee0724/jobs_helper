@@ -7,7 +7,7 @@ export function extractProfileKeywords(profile: Profile): string[] {
   for (const h of profile.highlights || []) {
     // 亮点可能是整句：再按常见分隔拆
     raw.push(h)
-    raw.push(...h.split(/[、，,；;\/\|·•\s]+/))
+    raw.push(...h.split(/[、，,；;/|·•\s]+/))
   }
   for (const r of profile.expectRoles || []) raw.push(r)
 

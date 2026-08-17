@@ -10,7 +10,10 @@
 
 ## 版本
 
-- **扩展发布版本**以 `extension/manifest.config.ts` 的 `version` 为准（当前 `0.1.15`）；`package.json` 的 `version` 与之对齐，便于发版与核对。
+- **扩展发布版本**以 `extension/manifest.config.ts` 的 `version` 为准（当前 `0.2.0`）；`package.json` 的 `version` 与之对齐，便于发版与核对。
+
+**改进历史**
+- v0.2.0 (2026-08-14): 全量代码审计（`docs/aegis/code-audit-2026-08-14.md`）+ 下一步规划（`docs/aegis/next-step-roadmap-2026-08-14.md`）；恢复 Service Worker 事件接线（回滚 stub 化重写）；依赖对齐（vitest/prettier/eslint 安装，ESLint 迁到 flat config）；新增 `npm run lint` / `npm run check` 门禁。
 - 构建产物在 `dist/`，Chrome 加载的是该目录中的 manifest。
 
 ## 开发与构建
@@ -19,6 +22,8 @@
 npm install
 npm run build
 npm test
+npm run lint
+npm run check   # build + test + lint 一次跑完（提交前门禁）
 ```
 
 开发热更新：

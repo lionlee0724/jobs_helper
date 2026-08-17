@@ -220,9 +220,9 @@ function permissionHelp(originPattern: string, grantedOrigins: string[]): string
 /** 去掉复制粘贴常见污染：BOM/零宽/NBSP（用 \u 转义，避免源文件本身带不可见字符） */
 function stripInvisible(s: string): string {
   return s
-    .replace(/﻿/g, '')
-    .replace(/[​-‍⁠]/g, '')
-    .replace(/ /g, ' ')
+    .replace(/\uFEFF/g, '')
+    .replace(/[\u200B-\u200D\u2060]/g, '')
+    .replace(/\u00A0/g, ' ')
 }
 
 export function sanitizeHeaderValue(label: string, raw: string): string {

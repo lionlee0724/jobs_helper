@@ -1,24 +1,41 @@
 {
   "name": "boss-job-assistant",
-  "version": "0.1.15",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:codex": "vite --mode codex",
+    "build:codex": "vite build --mode codex",
+    "lint": "eslint extension tests vite.config.ts",
+    "format": "prettier --write \"extension/**/*.{ts,tsx}\"",
+    "lint:fix": "npm run format && npm run lint -- --fix",
+    "check": "npm run build && npm test && npm run lint"
   },
   "dependencies": {
     "dexie": "^4.0.11"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@eslint/js": "^9.39.5",
     "@types/chrome": "^0.0.287",
     "@types/node": "^26.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "eslint": "^9.39.5",
     "jsdom": "^29.1.1",
+    "prettier": "^3.9.6",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.9"
+  },
+  "codex": {
+    "enabled": true,
+    "model": "claude-3-5-sonnet-20241022",
+    "apiKey": null,
+    "baseURL": "https://api.anthropic.com"
   }
 }
