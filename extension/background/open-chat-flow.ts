@@ -8,8 +8,6 @@ import {
 } from '../domain/policy'
 import {
   canOpenMoreThisHour,
-  isWithinActiveWindow,
-  msUntilActiveWindow,
   nextIntervalMs,
   humanTiming,
 } from '../domain/risk'
@@ -73,16 +71,6 @@ export async function runOpenChatBatch(
   if (!(await isStillRunning(gen))) return 'none'
 
   const policy = await kv.getPolicy()
-
-  // 活跃时段：不是停机，而是等到窗口开启（避免深夜/周末投递这种易识别形态）
-  const win = isWithinActiveWindow(policy)
-  if (!win.ok) {
-    const wait = msUntilActiveWindow(policy)
-    await stopRun(
-      `${win.reason}；距下一个投递窗口约 ${Math.round(wait / 60000)} 分钟`,
-    )
-    return 'none'
-  }
 
   const daily = await getDaily()
   const cap = canOpenMoreToday(policy, daily.opened)

@@ -21,8 +21,6 @@ export type RiskPreset = Required<
     | 'hourlyOpenChatLimit'
     | 'minIntervalMs'
     | 'maxIntervalMs'
-    | 'activeHourStart'
-    | 'activeHourEnd'
     | 'humanize'
     | 'backoffBaseMs'
     | 'backoffMaxMs'
@@ -42,9 +40,7 @@ const PRESETS: Record<Exclude<RiskProfile, 'custom'>, RiskPreset> = {
     hourlyOpenChatLimit: 6,
     minIntervalMs: 45_000,
     maxIntervalMs: 150_000,
-    activeHourStart: 9,
-    activeHourEnd: 20,
-    // 周末锁已按 08-08 PRD 移除（2026-08-14）：保守档仅限时段，不再锁定星期
+    // 时段限制已整体移除（2026-08-14，随时可测）：不再锁定小时/星期
     humanize: 'strong',
     backoffBaseMs: 15 * 60_000,
     backoffMaxMs: 4 * 60 * 60_000,
@@ -54,8 +50,6 @@ const PRESETS: Record<Exclude<RiskProfile, 'custom'>, RiskPreset> = {
     hourlyOpenChatLimit: 12,
     minIntervalMs: 20_000,
     maxIntervalMs: 75_000,
-    activeHourStart: 8,
-    activeHourEnd: 22,
     activeWeekdays: undefined,
     humanize: 'light',
     backoffBaseMs: 5 * 60_000,
@@ -66,8 +60,6 @@ const PRESETS: Record<Exclude<RiskProfile, 'custom'>, RiskPreset> = {
     hourlyOpenChatLimit: 30,
     minIntervalMs: 6_000,
     maxIntervalMs: 20_000,
-    activeHourStart: 0,
-    activeHourEnd: 24,
     activeWeekdays: undefined,
     humanize: 'off',
     backoffBaseMs: 60_000,
@@ -94,78 +86,6 @@ export function effectivePolicy(policy: Policy): Policy {
     }
   }
   return merged
-}
-
-// —— 时段窗口 ——
-
-/**
- * 是否处于允许投递的时段。
- *
- * 跨零点窗口（如 22-6）按环绕处理。星期判定用窗口起点所在的日期，
- * 避免跨零点时把周六凌晨算作周五。
- */
-export function isWithinActiveWindow(policy: Policy, now = new Date()): GuardResult {
-  const p = effectivePolicy(policy)
-  const start = p.activeHourStart
-  const end = p.activeHourEnd
-
-  const hour = now.getHours()
-  let inHours = true
-  let wrapped = false
-  if (start != null && end != null && !(start === 0 && end === 24)) {
-    if (start === end) {
-      inHours = false
-    } else if (start < end) {
-      inHours = hour >= start && hour < end
-    } else {
-      // 跨零点
-      wrapped = hour < end
-      inHours = hour >= start || hour < end
-    }
-  }
-  if (!inHours) {
-    return {
-      ok: false,
-      reason: `当前 ${hour} 点不在活跃时段 ${start}:00-${end}:00`,
-    }
-  }
-
-  const days = p.activeWeekdays
-  if (days && days.length) {
-    // 跨零点窗口的后半段归属前一天
-    const refDay = wrapped ? (now.getDay() + 6) % 7 : now.getDay()
-    if (!days.includes(refDay)) {
-      const names = ['日', '一', '二', '三', '四', '五', '六']
-      return {
-        ok: false,
-        reason: `周${names[refDay]}不在允许的投递日（${days.map((d) => '周' + names[d]).join('、')}）`,
-      }
-    }
-  }
-
-  return { ok: true }
-}
-
-/** 距离下一个活跃窗口开启还有多久；已在窗口内返回 0 */
-export function msUntilActiveWindow(policy: Policy, now = new Date()): number {
-  if (isWithinActiveWindow(policy, now).ok) return 0
-  const p = effectivePolicy(policy)
-  const start = p.activeHourStart ?? 0
-
-  const next = new Date(now)
-  next.setMinutes(0, 0, 0)
-  next.setHours(start)
-  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1)
-
-  // 向后找到第一个允许的星期，最多查 8 天
-  const days = p.activeWeekdays
-  if (days && days.length) {
-    for (let i = 0; i < 8; i++) {
-      if (days.includes(next.getDay())) break
-      next.setDate(next.getDate() + 1)
-    }
-  }
-  return Math.max(0, next.getTime() - now.getTime())
 }
 
 // —— 小时配额 ——

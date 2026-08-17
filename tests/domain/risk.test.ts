@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   effectivePolicy,
-  isWithinActiveWindow,
-  msUntilActiveWindow,
   canOpenMoreThisHour,
   nextIntervalMs,
   computeBackoffMs,
@@ -25,7 +23,6 @@ describe('effectivePolicy — 预设补空缺，不覆盖用户显式值', () =>
     const p = effectivePolicy(conservative)
     expect(p.dailyOpenChatLimit).toBe(30)
     expect(p.hourlyOpenChatLimit).toBe(6)
-    expect(p.activeHourStart).toBe(9)
     expect(p.humanize).toBe('strong')
   })
 
@@ -40,66 +37,6 @@ describe('effectivePolicy — 预设补空缺，不覆盖用户显式值', () =>
     expect(riskPresetOf('custom')).toBeNull()
     const p = effectivePolicy({ enabled: true, riskProfile: 'custom' })
     expect(p.dailyOpenChatLimit).toBeUndefined()
-  })
-})
-
-describe('isWithinActiveWindow', () => {
-  // 2026-07-22 是周三
-  const wed = (h: number) => new Date(2026, 6, 22, h, 0, 0)
-  const sat = (h: number) => new Date(2026, 6, 25, h, 0, 0)
-
-  it('保守档：工作日 9-20 点内允许', () => {
-    expect(isWithinActiveWindow(conservative, wed(9)).ok).toBe(true)
-    expect(isWithinActiveWindow(conservative, wed(19)).ok).toBe(true)
-  })
-
-  it('保守档：时段外拒绝', () => {
-    expect(isWithinActiveWindow(conservative, wed(8)).ok).toBe(false)
-    expect(isWithinActiveWindow(conservative, wed(20)).ok).toBe(false)
-    expect(isWithinActiveWindow(conservative, wed(3)).ok).toBe(false)
-  })
-
-  it('保守档：周末不再锁定（时段内允许，08-08 PRD）', () => {
-    const r = isWithinActiveWindow(conservative, sat(10))
-    expect(r.ok).toBe(true)
-  })
-
-  it('跨零点窗口按环绕处理', () => {
-    const night: Policy = {
-      enabled: true,
-      riskProfile: 'custom',
-      activeHourStart: 22,
-      activeHourEnd: 6,
-    }
-    expect(isWithinActiveWindow(night, wed(23)).ok).toBe(true)
-    expect(isWithinActiveWindow(night, wed(2)).ok).toBe(true)
-    expect(isWithinActiveWindow(night, wed(12)).ok).toBe(false)
-  })
-
-  it('aggressive 档 0-24 视为不限', () => {
-    const p: Policy = { enabled: true, riskProfile: 'aggressive' }
-    expect(isWithinActiveWindow(p, wed(3)).ok).toBe(true)
-    expect(isWithinActiveWindow(p, sat(3)).ok).toBe(true)
-  })
-})
-
-describe('msUntilActiveWindow', () => {
-  it('窗口内返回 0', () => {
-    expect(msUntilActiveWindow(conservative, new Date(2026, 6, 22, 10))).toBe(0)
-  })
-
-  it('清晨等待到当日 9 点', () => {
-    const ms = msUntilActiveWindow(conservative, new Date(2026, 6, 22, 7, 0, 0))
-    expect(ms).toBe(2 * 60 * 60 * 1000)
-  })
-
-  it('周五夜间到周六上午（周末锁已移除）', () => {
-    // 2026-07-24 周五 21:00 → 下一个允许时刻是周六 9:00（仅受时段限制）
-    const from = new Date(2026, 6, 24, 21, 0, 0)
-    const ms = msUntilActiveWindow(conservative, from)
-    const target = new Date(from.getTime() + ms)
-    expect(target.getDay()).toBe(6)
-    expect(target.getHours()).toBe(9)
   })
 })
 

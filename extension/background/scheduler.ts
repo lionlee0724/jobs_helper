@@ -6,10 +6,6 @@ import {
   canStart,
   isFollowUpInJobRunEnabled,
 } from '../domain/policy'
-import {
-  isWithinActiveWindow,
-  msUntilActiveWindow,
-} from '../domain/risk'
 import * as kv from '../data/kv'
 import { appendEvent, listRecentEvents } from '../data/repos/events'
 import { getDaily } from '../data/repos/daily-stats'
@@ -85,10 +81,6 @@ export async function previewRunList(): Promise<
         (anomaly.needsHuman ? '请先完成验证/登录。' : ''),
     }
   }
-  const win = isWithinActiveWindow(policy)
-  if (!win.ok) {
-    return { ok: false, error: win.reason }
-  }
   const pinned = await resolveCurrentListTab()
   if (!pinned.ok) return { ok: false, error: pinned.error }
   return {
@@ -115,16 +107,6 @@ export async function startRun(): Promise<{ ok: true } | { ok: false; error: str
         (anomaly.needsHuman
           ? '请先在浏览器里手动完成验证/登录并正常浏览一会儿再开始。'
           : '连续异常会自动延长冷却时间。'),
-    }
-  }
-
-  // 活跃时段闸门
-  const win = isWithinActiveWindow(policy)
-  if (!win.ok) {
-    const mins = Math.round(msUntilActiveWindow(policy) / 60000)
-    return {
-      ok: false,
-      error: `${win.reason}。距下一个投递窗口约 ${mins} 分钟（可在侧栏调整活跃时段）。`,
     }
   }
 

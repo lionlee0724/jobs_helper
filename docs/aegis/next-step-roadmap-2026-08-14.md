@@ -45,7 +45,8 @@ Inputs: `code-audit-2026-08-14.md`（全量审计）· `functional-layer-review-
 | R1-4 | **`run-state-machine.ts` 处置** | `domain/run-state-machine.ts` | 按功能层评审 W5：删除或真接入（当前生产死代码且与 scheduler 双叙事）；连同 `JobSource` 三源叙事收敛（保持 `JOB_SOURCES=['current']`） |
 | R1-5 | **DB 迁移脚手架** | `data/db.ts` | `version(2)` 预留 + 升级回调（`upgrade`），避免「加字段=丢老数据」 |
 | R1-6 | **事件保留与日汇总对账** | `retention.ts` + `daily-stats.ts` | `pruneIfNeeded` 删除超过保留期的 events 后，被删事件所属日期的 `daily_stats` 不回退（对账偏差）；补 `recomputeDay` 维护工具（非常路径，按 spec 4.4.4） |
-| R1-7 | **risk 周末锁移除** | `domain/risk.ts` conservative 预设 | 已立项 `08-08-remove-weekend-delivery-lock`（PRD 完备），安排执行：删 `activeWeekdays:[1..5]`、补周五夜/周日测试、README 时段文案 |
+| R1-7 | **risk 周末锁移除** | `domain/risk.ts` conservative 预设 | 已立项 `08-08-remove-weekend-delivery-lock`（PRD 完备），安排执行：删 `activeWeekdays:[1..5]`、补周五夜/周日测试、README 时段文案（已执行并入 2026-08-14 变更记录，见下） |
+| 2026-08-14 | **活跃时段限制整体移除** | `domain/risk.ts` + `scheduler.ts` / `open-chat-flow.ts` / `message-assist-loop.ts` 四处强制点 | 用户要求随时可测（深夜/任意时段均可投递与回消息）：删除 `isWithinActiveWindow` / `msUntilActiveWindow` 及全部强制点（startRun 闸门、preview 检查、open-chat 窗口等待、消息循环 start/pump 门禁）、预设字段与对应测试；README 时段列改为「不限时段」 |
 
 ### 3.2 领域边界与测试补漏（对照审计逐条）
 

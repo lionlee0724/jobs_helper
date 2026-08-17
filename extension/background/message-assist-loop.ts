@@ -14,7 +14,7 @@
 import * as kv from '../data/kv'
 import * as threadsRepo from '../data/repos/chat-threads'
 import { appendEvent } from '../data/repos/events'
-import { nextIntervalMs, isWithinActiveWindow } from '../domain/risk'
+import { nextIntervalMs } from '../domain/risk'
 import {
   scoreChatSessionMatch,
   CHAT_MATCH_THRESHOLD,
@@ -90,14 +90,6 @@ export async function stopAll(reason = '用户停止'): Promise<void> {
  * 立即跑第一条（用户点了按钮就该有反馈），之后交给 alarm 续跑。
  */
 export async function startAll(): Promise<{ ok: boolean; error?: string }> {
-  const policy = await kv.getPolicy()
-
-  // 与投递共用活跃时段：深夜集中回消息同样是可识别形态
-  const win = isWithinActiveWindow(policy)
-  if (!win.ok) {
-    return { ok: false, error: `${win.reason}；消息处理与投递共用活跃时段设置` }
-  }
-
   const remaining = await remainingCount()
   if (remaining === 0) {
     return { ok: false, error: '当前没有待跟进的会话。可先点「导入现有会话」' }
@@ -134,13 +126,6 @@ async function scheduleNext(): Promise<void> {
 export async function pump(): Promise<void> {
   const s = await getState()
   if (!s.active) return
-
-  const policy = await kv.getPolicy()
-  const win = isWithinActiveWindow(policy)
-  if (!win.ok) {
-    await stopAll(`已暂停：${win.reason}`)
-    return
-  }
 
   let r: Awaited<ReturnType<typeof runMessageAssist>>
   try {
