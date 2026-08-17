@@ -1,4 +1,4 @@
-﻿import type { Policy, Profile, MessageAssistConfig, RunState } from '../../shared/types'
+import type { Policy, Profile, MessageAssistConfig, RunState } from '../../shared/types'
 import type { ResponseMessage } from '../../shared/messages'
 
 import {
@@ -971,13 +971,13 @@ async function w(): Promise<Policy> {
   const policy: Policy = {
     enabled: $('enabled')!.checked,
     followUpInJobRun: $('followUpInJobRun')?.checked !== false,
-    dailyOpenChatLimit: parseInt($('dailyLimit')!.value) || undefined,
-    dailyReplyLimit: parseInt($('replyLimit')!.value) || undefined,
+    dailyOpenChatLimit: numField($('dailyLimit')!.value, { min: 1, max: 2000 }),
+    dailyReplyLimit: numField($('replyLimit')!.value, { min: 1, max: 2000 }),
     minIntervalMs,
     maxIntervalMs,
-    sessionMaxOpenChat: parseInt($('sessionMaxOpenChat')!.value) || undefined,
-    sessionMaxReplies: parseInt($('sessionMaxReplies')!.value) || undefined,
-    matchMinKeywordHits: parseInt($('matchMinKeywordHits')!.value) || 2,
+    sessionMaxOpenChat: numField($('sessionMaxOpenChat')!.value, { min: 1, max: 500 }),
+    sessionMaxReplies: numField($('sessionMaxReplies')!.value, { min: 1, max: 500 }),
+    matchMinKeywordHits: numField($('matchMinKeywordHits')!.value, { min: 0, max: 20, fallback: 2 }),
     matchMode,
     minMatchScore: normalizeMinMatchScore($('minMatchScore')!.value),
     excludeKeywords: normalizeExcludeKeywords($('excludeKeywords')!.value),
@@ -1039,6 +1039,18 @@ function v(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+/** 表单数字字段统一解析 + 钳制（R1 3.3）：非法 → fallback ?? undefined；越界 → min/max */
+function numField(
+  raw: string | null | undefined,
+  opts: { min?: number; max?: number; fallback?: number } = {},
+): number | undefined {
+  const n = parseInt(raw ?? '', 10)
+  if (!Number.isFinite(n)) return opts.fallback ?? undefined
+  if (opts.min != null && n < opts.min) return opts.min
+  if (opts.max != null && n > opts.max) return opts.max
+  return n
+}
+
 async function K() {
   try {
     O()
@@ -1052,6 +1064,10 @@ async function K() {
     await k()
     await y(false)
     h = setInterval(() => { if (!u) void y(); }, 5000)
+    // 切回侧栏时立即刷新，避免重开后有最长 5s 的陈旧窗口
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !u) void y()
+    })
     i('侧栏已加载', 'ok')
   } catch (e) {
     i(e instanceof Error ? e.message : String(e), 'err')
