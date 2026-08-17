@@ -59,10 +59,9 @@ describe('isWithinActiveWindow', () => {
     expect(isWithinActiveWindow(conservative, wed(3)).ok).toBe(false)
   })
 
-  it('保守档：周末拒绝', () => {
+  it('保守档：周末不再锁定（时段内允许，08-08 PRD）', () => {
     const r = isWithinActiveWindow(conservative, sat(10))
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain('周六')
+    expect(r.ok).toBe(true)
   })
 
   it('跨零点窗口按环绕处理', () => {
@@ -94,12 +93,12 @@ describe('msUntilActiveWindow', () => {
     expect(ms).toBe(2 * 60 * 60 * 1000)
   })
 
-  it('周五夜间跳过周末到周一', () => {
-    // 2026-07-24 周五 21:00 → 下一个允许时刻是周一 9:00
+  it('周五夜间到周六上午（周末锁已移除）', () => {
+    // 2026-07-24 周五 21:00 → 下一个允许时刻是周六 9:00（仅受时段限制）
     const from = new Date(2026, 6, 24, 21, 0, 0)
     const ms = msUntilActiveWindow(conservative, from)
     const target = new Date(from.getTime() + ms)
-    expect(target.getDay()).toBe(1)
+    expect(target.getDay()).toBe(6)
     expect(target.getHours()).toBe(9)
   })
 })

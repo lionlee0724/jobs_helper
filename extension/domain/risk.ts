@@ -44,7 +44,7 @@ const PRESETS: Record<Exclude<RiskProfile, 'custom'>, RiskPreset> = {
     maxIntervalMs: 150_000,
     activeHourStart: 9,
     activeHourEnd: 20,
-    activeWeekdays: [1, 2, 3, 4, 5],
+    // 周末锁已按 08-08 PRD 移除（2026-08-14）：保守档仅限时段，不再锁定星期
     humanize: 'strong',
     backoffBaseMs: 15 * 60_000,
     backoffMaxMs: 4 * 60 * 60_000,

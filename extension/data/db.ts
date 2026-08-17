@@ -14,12 +14,25 @@ export class BossJobDb extends Dexie {
 
   constructor() {
     super('boss_job_assistant')
+    // v1：初始四表。历史版本保留只读记录；新库直接跳到 v2。
     this.version(1).stores({
       jobs: 'id, lastSeenAt, outcome, source, company',
       events: 'id, ts, day, type, jobId, [type+ts], [jobId+ts]',
       chat_threads: 'id, status, jobId, lastActionAt',
       daily_stats: 'day',
     })
+    // v2：schema 未变，仅建立迁移脚手架（R1-5）——今后加索引/字段在 stores 中增量声明，
+    // 并在 upgrade 回调做数据搬迁（如给旧行补默认值），避免「加字段=丢老库」。
+    this.version(2)
+      .stores({
+        jobs: 'id, lastSeenAt, outcome, source, company',
+        events: 'id, ts, day, type, jobId, [type+ts], [jobId+ts]',
+        chat_threads: 'id, status, jobId, lastActionAt',
+        daily_stats: 'day',
+      })
+      .upgrade(async () => {
+        // v1→v2 无结构变化：占位回调，保证后续 v3+ 有清晰的升级点
+      })
   }
 }
 

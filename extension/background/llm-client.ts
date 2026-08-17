@@ -1,5 +1,8 @@
 import type { LlmConfig } from '../shared/types'
 
+/** 聊天回复 / 画像归纳路径的 LLM 额外重试次数（与职位匹配 MATCH_LLM_EXTRA_RETRIES 对齐，R1-2） */
+export const CHAT_LLM_EXTRA_RETRIES = 2
+
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
 export type ChatCompletionOpts = {

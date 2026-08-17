@@ -73,6 +73,8 @@ export function parseSalaryRange(
   if (!salary) return null
   const t = salary.replace(/\s+/g, '')
   if (/面议|面谈|薪资面议/.test(t)) return null
+  // 日薪/时薪等非月薪形态无法与月薪下限比较（P1-6）：视为缺失（fail-soft），避免误判
+  if (/元\/(天|月|时|小时)/.test(t)) return null
 
   // 常见区间：12-15K / 15-25K·13薪 / 1.5-2W / 10～20k
   const m = t.match(/(\d+(?:\.\d+)?)\s*[-~～—–]\s*(\d+(?:\.\d+)?)\s*([KkWw千万])?/)

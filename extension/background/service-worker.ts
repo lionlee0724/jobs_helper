@@ -1,4 +1,5 @@
 import type { RequestMessage } from '../shared/messages'
+import { maskKvForExport } from '../shared/export-mask'
 import * as kv from '../data/kv'
 import { listRecentEvents } from '../data/repos/events'
 import { listAllJobs } from '../data/repos/jobs'
@@ -281,7 +282,7 @@ async function handleMessage(msg: RequestMessage) {
         events: await listAllEvents(),
         daily_stats: await listLastNDays(365),
         threads: await listAllThreads(),
-        kv: await kv.getAllKv(),
+        kv: maskKvForExport(await kv.getAllKv()),
       }
       return { type: 'export/all', payload }
     }

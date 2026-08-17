@@ -220,7 +220,15 @@ export async function tick() {
   setInFlight(true)
   const gen = activeGeneration
   try {
-    await pruneIfNeeded().catch(() => undefined)
+    try {
+      await pruneIfNeeded()
+    } catch (e) {
+      // 保留策略失败必须可见（R1-3）：记事件供看板/排障，不再静默吞错
+      await appendEvent({
+        type: 'error',
+        payload: { op: 'prune', message: e instanceof Error ? e.message : String(e) },
+      }).catch(() => undefined)
+    }
     if (!(await isStillRunning(gen))) return
     const state = await kv.getRunState()
     if (state.status !== 'running') return

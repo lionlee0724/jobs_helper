@@ -14,7 +14,7 @@ import {
 import { classifyIntent, handlingFor, handoffReason } from '../domain/intent'
 import type { ChatSessionItem } from '../domain/chat-match'
 import { fingerprintPeer } from '../domain/chat-match'
-import { chatCompletion } from './llm-client'
+import { CHAT_LLM_EXTRA_RETRIES, chatCompletion } from './llm-client'
 import * as kv from '../data/kv'
 import { appendEvent } from '../data/repos/events'
 import * as jobsRepo from '../data/repos/jobs'
@@ -378,6 +378,7 @@ export async function processFollowUpOnTab(
         history: list.slice(-5).join('\n'),
         intent,
       }),
+      { retries: CHAT_LLM_EXTRA_RETRIES },
     )
     const text = parseChatReply(raw)
 

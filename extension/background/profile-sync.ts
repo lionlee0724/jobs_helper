@@ -7,7 +7,7 @@ import {
   mergeProfileFromLlm,
   parseProfileAnalyze,
 } from '../domain/profile-llm'
-import { chatCompletion } from './llm-client'
+import { CHAT_LLM_EXTRA_RETRIES, chatCompletion } from './llm-client'
 import * as kv from '../data/kv'
 import { appendEvent } from '../data/repos/events'
 import { BOSS_URLS } from '../shared/boss-urls'
@@ -43,6 +43,7 @@ async function analyzeProfileWithLlm(
     temperature: 0.3,
     timeoutMs: 90_000,
     jsonMode: true,
+    retries: CHAT_LLM_EXTRA_RETRIES,
   })
   const draft = parseProfileAnalyze(raw, rawText)
   return await mergeProfileFromLlm(draft, rawText, prev)
