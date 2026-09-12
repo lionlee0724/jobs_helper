@@ -177,6 +177,34 @@ export function extractJobHardSignals(
  * - JD 未写年限 → 不因年限拒绝
  * - 未配置期望城市 → 不做城市判断
  */
+/** 检查是否真正命中排除词（识别并忽略「非外包」、「拒绝外包」等否定/自清上下文） */
+export function isExcludeKeywordHit(haystack: string, keyword: string): boolean {
+  const kw = (keyword || '').trim().toLowerCase()
+  if (!kw || !haystack.includes(kw)) return false
+
+  let idx = 0
+  while (idx < haystack.length) {
+    const pos = haystack.indexOf(kw, idx)
+    if (pos === -1) break
+
+    // 检查前面 1-12 个字符的前缀上下文
+    const prefixStart = Math.max(0, pos - 12)
+    const prefix = haystack.slice(prefixStart, pos)
+
+    // 否定语义模式：如「非外包」「不是外包」「不招外包」「拒绝外包」「没有外包」「自研非外包」「严禁外包」「无需外包」
+    const isNegated = /(?:非|不是|不招|拒绝|没有|自研(?:[，、\s]*非)?|严禁|无需|杜绝|非从事)\s*$/i.test(prefix)
+
+    if (!isNegated) {
+      // 找到了至少一个非否定的真正命中
+      return true
+    }
+    idx = pos + kw.length
+  }
+
+  // 所有出现均带否定前缀，视为未命中排除词
+  return false
+}
+
 export function evaluateHardRules(input: {
   profile: Profile
   job: Job
@@ -189,21 +217,31 @@ export function evaluateHardRules(input: {
   const rules: string[] = []
   const signals = input.signals ?? extractJobHardSignals(job)
 
-  // 1) 排除词
+  // 1) 排除词：支持上下文否定词智能过滤（如忽略「非外包」）
   const excludes = (config.excludeKeywords || []).filter((k) => k.trim())
   if (excludes.length) {
-    const hit = excludes.find((k) => signals.haystack.includes(k.trim().toLowerCase()))
+    const hit = excludes.find((k) => isExcludeKeywordHit(signals.haystack, k))
     if (hit) {
       rules.push('exclude_keyword')
       reasons.push(`命中排除词「${hit}」`)
     }
   }
 
-  // 2) 城市
+  // 2) 城市：支持模糊包含与省市区容错
   const cities = (config.expectCities || []).filter((c) => c.trim())
   if (cities.length && job.city) {
-    const jc = job.city
-    const ok = cities.some((c) => jc.includes(c.trim()) || c.trim().includes(jc))
+    const jc = job.city.trim()
+    const ok = cities.some((c) => {
+      const target = c.trim()
+      if (!target) return false
+      const cleanTarget = target.replace(/[市区分省]/g, '')
+      const cleanJc = jc.replace(/[市区分省]/g, '')
+      return (
+        jc.includes(target) ||
+        target.includes(jc) ||
+        (cleanTarget.length >= 2 && cleanJc.includes(cleanTarget))
+      )
+    })
     if (!ok) {
       rules.push('city_mismatch')
       reasons.push(`城市「${job.city}」不在期望范围（${cities.join('、')}）`)

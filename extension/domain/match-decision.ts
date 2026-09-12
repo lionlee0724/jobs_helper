@@ -1,4 +1,4 @@
-﻿import {
+import {
   DEFAULT_MIN_MATCH_SCORE,
   type Job,
   type MatchResult,
@@ -14,6 +14,7 @@ import {
 import { tierFromScore, type LlmMatchResult, type MatchTier } from './match-llm'
 import { resolveMatchLlmWeight } from './policy'
 import { formatLlmMatchFailureReason } from './match-display'
+import { scoreTitleAffinity, titleAffinityBonus } from './role-affinity'
 
 export { DEFAULT_MIN_MATCH_SCORE }
 
@@ -323,7 +324,25 @@ export function decideJobMatch(input: {
   const llmWeight = resolveMatchLlmWeight(input.policy)
   const kwWeight = 1 - llmWeight
   const llmScore = effectiveLlm.score
-  const combined = Math.round(llmScore * llmWeight + kwScore * kwWeight)
+  let combined = Math.round(llmScore * llmWeight + kwScore * kwWeight)
+
+  // 防拉踩保底：当 LLM 语义评估已经合格 (>= minScore) 且无硬性阻碍时，
+  // 避免因字面关键词未完全重叠而被 0 分拉低至及格线以下
+  if (
+    llmScore >= minScore &&
+    combined < minScore &&
+    (!effectiveLlm.blockers || effectiveLlm.blockers.length === 0)
+  ) {
+    combined = minScore
+  }
+
+  // 标题角色亲和加分：期望岗/同族别名命中标题时小幅抬升（上限 +8，低基础分不救）
+  const affinity = scoreTitleAffinity(input.profile, input.job)
+  const bonus = titleAffinityBonus(affinity, combined)
+  if (bonus > 0) {
+    combined = Math.min(100, combined + bonus)
+  }
+
   const tier = tierFromScore(combined)
   const pass = combined >= minScore
 
@@ -331,11 +350,16 @@ export function decideJobMatch(input: {
   if (kw.hitCount > 0) {
     reasons.push(`关键词佐证 ${kw.hitCount}：${kw.hits.slice(0, 4).join('、')}`)
   }
+  if (affinity.matched.length) {
+    reasons.push(
+      `标题角色亲和 ${affinity.matched.slice(0, 3).join('、')}${bonus ? `（+${bonus}）` : ''}`,
+    )
+  }
   if (effectiveLlm.blockers?.length) {
     reasons.push(`阻碍：${effectiveLlm.blockers.slice(0, 2).join('；')}`)
   }
   reasons.push(
-    `综合分 ${combined}（LLM ${llmScore} × ${llmWeight.toFixed(2)} + 关键词 ${kwScore} × ${kwWeight.toFixed(2)}），阈值 ${minScore}`,
+    `综合分 ${combined}（LLM ${llmScore} × ${llmWeight.toFixed(2)} + 关键词 ${kwScore} × ${kwWeight.toFixed(2)}${bonus ? ` +亲和 ${bonus}` : ''}），阈值 ${minScore}`,
   )
 
   return {
@@ -345,7 +369,7 @@ export function decideJobMatch(input: {
     suitable: pass,
     score: combined,
     tier,
-    via: kw.hitCount > 0 ? 'hybrid' : 'llm',
+    via: kw.hitCount > 0 || affinity.matched.length ? 'hybrid' : 'llm',
     reasons: reasons.slice(0, 7),
     confidence: effectiveLlm.confidence,
   }

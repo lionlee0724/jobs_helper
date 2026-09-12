@@ -1,6 +1,7 @@
 import type { Job, Profile } from '../shared/types'
+import { expandKeywordsWithRoleAliases } from './role-affinity'
 
-/** 从简历 skills / highlights / expectRoles 抽可匹配关键词 */
+/** 从简历 skills / highlights / expectRoles 抽可匹配关键词（含角色同族别名） */
 export function extractProfileKeywords(profile: Profile): string[] {
   const raw: string[] = []
   for (const s of profile.skills || []) raw.push(s)
@@ -11,7 +12,7 @@ export function extractProfileKeywords(profile: Profile): string[] {
   }
   for (const r of profile.expectRoles || []) raw.push(r)
 
-  const out: string[] = []
+  const base: string[] = []
   const seen = new Set<string>()
   for (const item of raw) {
     const t = (item || '').trim()
@@ -22,9 +23,10 @@ export function extractProfileKeywords(profile: Profile): string[] {
     const key = t.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(t)
+    base.push(t)
   }
-  return out
+  // 角色同族扩张：交付经理 ↔ 项目经理 等，降低「字面不一致但适合」的漏投
+  return expandKeywordsWithRoleAliases(base)
 }
 
 export type KeywordHitResult = {
