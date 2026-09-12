@@ -20,44 +20,64 @@ export function mountMessageOverlay() {
       #${ROOT_ID} {
         all: initial;
         position: fixed;
-        right: 16px;
-        bottom: 16px;
+        right: 18px;
+        bottom: 18px;
         z-index: 2147483646;
-        font-family: "Segoe UI", system-ui, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
         font-size: 13px;
-        color: #e8eef9;
+        color: #ffffff;
+        -webkit-font-smoothing: antialiased;
       }
       #${ROOT_ID} .panel {
-        width: 280px;
-        background: #121a2b;
-        border: 1px solid #2a3a55;
-        border-radius: 14px;
-        box-shadow: 0 12px 40px rgba(0,0,0,.45);
+        width: 290px;
+        background: rgba(28, 28, 30, 0.88);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 16px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.2);
         overflow: hidden;
       }
       #${ROOT_ID} .hd {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 10px 12px;
-        background: #1a2744;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         cursor: move;
         user-select: none;
       }
-      #${ROOT_ID} .hd b { font-size: 13px; }
+      #${ROOT_ID} .hd b {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
       #${ROOT_ID} .hd button {
         all: unset;
         cursor: pointer;
-        color: #8b9bb4;
+        color: #8e8e93;
         padding: 2px 6px;
+        font-size: 14px;
+        border-radius: 4px;
+        transition: color 0.15s ease;
       }
-      #${ROOT_ID} .bd { padding: 10px 12px 12px; }
+      #${ROOT_ID} .hd button:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      #${ROOT_ID} .bd { padding: 12px 14px 14px; }
       #${ROOT_ID} .status {
         font-size: 12px;
-        color: #8b9bb4;
-        margin-bottom: 8px;
+        color: #a1a1a6;
+        margin-bottom: 10px;
         min-height: 2.6em;
         white-space: pre-wrap;
+        line-height: 1.45;
+        background: rgba(0, 0, 0, 0.25);
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
       }
       #${ROOT_ID} .row {
         display: flex;
@@ -68,35 +88,52 @@ export function mountMessageOverlay() {
       #${ROOT_ID} .row button {
         all: unset;
         box-sizing: border-box;
-        background: #3b82f6;
-        color: #fff;
+        background: linear-gradient(135deg, #0a84ff 0%, #0066d6 100%);
+        color: #ffffff;
         border-radius: 8px;
-        padding: 7px 10px;
+        padding: 7px 11px;
         cursor: pointer;
         font-size: 12px;
         font-weight: 600;
+        letter-spacing: -0.01em;
+        box-shadow: 0 2px 6px rgba(10, 132, 255, 0.25);
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: center;
+      }
+      #${ROOT_ID} .row button:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+      }
+      #${ROOT_ID} .row button:active {
+        transform: scale(0.97);
       }
       #${ROOT_ID} .row button.sec {
-        background: transparent;
-        border: 1px solid #2a3a55;
-        color: #e8eef9;
+        background: rgba(120, 120, 128, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+        box-shadow: none;
+      }
+      #${ROOT_ID} .row button.sec:hover {
+        background: rgba(120, 120, 128, 0.36);
       }
       #${ROOT_ID} .row button:disabled {
-        opacity: .5;
+        opacity: .45;
         cursor: not-allowed;
+        transform: none !important;
       }
       #${ROOT_ID} .log {
         max-height: 120px;
-        overflow: auto;
+        overflow-y: auto;
         font-size: 11px;
-        color: #a8b6cc;
-        font-family: ui-monospace, monospace;
-        border-top: 1px solid #2a3a55;
-        padding-top: 6px;
+        color: #8e8e93;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding-top: 8px;
+        margin-top: 4px;
       }
       #${ROOT_ID} .log div {
-        padding: 2px 0;
-        border-bottom: 1px solid #1c2740;
+        padding: 3px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
       }
       #${ROOT_ID}.min .bd { display: none; }
     </style>

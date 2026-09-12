@@ -12,6 +12,7 @@ import {
   extractJobDetail,
   clickOpenChat,
   isRealJobDetailHref,
+  checkOpenChatProgress,
 } from './adapter/boss/detail'
 import { scrapeResumePage, profilePageUrl } from './adapter/boss/profile'
 import { probeSelectors } from './adapter/boss/probe'
@@ -26,17 +27,6 @@ import {
   readActiveChatContext,
   detectAuthState,
 } from './adapter/boss/chat'
-
-/** 聊天界面就绪信号：用于校验开聊是否真的生效 */
-const CHAT_READY_SELECTOR = [
-  '#chat-input',
-  '.chat-input',
-  '.boss-chat-editor-input',
-  '[contenteditable="true"]',
-  'textarea.chat-input',
-  '.chat-conversation',
-  '.message-list',
-].join(',')
 
 export async function execCommand(cmd: ContentCommand): Promise<ContentResult> {
   try {
@@ -166,6 +156,19 @@ export async function execCommand(cmd: ContentCommand): Promise<ContentResult> {
       }
 
       case 'open_chat': {
+        // 已在聊天页：匹配后详情 tab 偶发被站内重定向到 /web/geek/chat
+        // （已沟通过 / 站内路由）。此时没有「立即沟通」，应按已开聊成功。
+        // URL 已是 geek/chat 即视为会话面；UI 选择器随改版可能滞后，不再强依赖。
+        if (/\/web\/geek\/chat/i.test(location.href)) {
+          return {
+            ok: true,
+            data: {
+              via: 'already_on_chat',
+              href: location.href.slice(0, 160),
+            },
+          }
+        }
+
         // 先「读」再点：打开职位即刻点开聊是明显的机器行为
         await simulateReading(cmd.timing)
         await waitIn(cmd.timing?.preClickMs)
@@ -174,30 +177,66 @@ export async function execCommand(cmd: ContentCommand): Promise<ContentResult> {
           await sleep(900)
           r = clickOpenChat()
         }
+        // 后台 tab 布局延迟：再等一轮
+        if (!r.ok && r.candidates === 0) {
+          await sleep(1200)
+          r = clickOpenChat()
+        }
         if (!r.ok) {
           return {
             ok: false,
-            error: `开聊点击失败：${r.error}（候选=${r.candidates}，href=${location.href.slice(0, 80)}）`,
+            error: `开聊点击失败：${r.error}（候选=${r.candidates}，href=${location.href.slice(0, 120)}）`,
           }
         }
 
-        // 校验真的进了会话：仅「派发了鼠标事件」不算成功。
-        // 旧实现在这里直接 return ok，导致调度器 markOpened / chat_open /
-        // 日配额均被假成功污染。
-        const deadline = Date.now() + 4000
+        // 校验真的进了会话：综合检测 URL 导航、聊天 UI、状态变更（继续沟通）、Toast 提示及平台限制
+        const deadline = Date.now() + 6500
+        let reclicked = false
         while (Date.now() < deadline) {
           await sleep(250)
-          if (/\/chat/i.test(location.href)) {
-            return { ok: true, data: { via: 'navigated', clicked: r.clicked } }
+          const check = checkOpenChatProgress()
+          if (check.status === 'success') {
+            return {
+              ok: true,
+              data: {
+                via: check.via,
+                detail: check.detail,
+                clicked: r.clicked,
+              },
+            }
           }
-          if (document.querySelector(CHAT_READY_SELECTOR)) {
-            return { ok: true, data: { via: 'chat-ui', clicked: r.clicked } }
+          if (check.status === 'failed') {
+            return {
+              ok: false,
+              error: check.error,
+            }
+          }
+          // 若 2s 后仍处于 pending，可能是首击被页面框架初始化阻断，进行二次安全点击
+          if (!reclicked && Date.now() > deadline - 4500) {
+            reclicked = true
+            clickOpenChat()
           }
         }
+
+        // 超时前做最后一次检查
+        const lastCheck = checkOpenChatProgress()
+        if (lastCheck.status === 'success') {
+          return {
+            ok: true,
+            data: {
+              via: lastCheck.via,
+              detail: lastCheck.detail,
+              clicked: r.clicked,
+            },
+          }
+        }
+        if (lastCheck.status === 'failed') {
+          return { ok: false, error: lastCheck.error }
+        }
+
         return {
           ok: false,
-          error: `已点击「${r.clicked?.text || '?'}」但 4s 内未出现聊天界面（fail-closed）。` +
-            `点中元素 ${r.clicked?.tag}.${r.clicked?.cls}，请跑「选择器自检」确认是否点错目标`,
+          error: `已点击「${r.clicked?.text || '立即沟通'}」(${r.clicked?.tag}.${r.clicked?.cls})，但未能检测到聊天界面、状态变更或成功提示（fail-closed）。`,
         }
       }
 

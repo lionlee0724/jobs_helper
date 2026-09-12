@@ -110,19 +110,27 @@ function I() {
 function O() {
   f = true
   g.innerHTML = `
-    <h1>BOSS 求职副驾驶</h1>
-    <p class="sub">本地扩展 · LLM 匹配 · 限速开聊 · IndexedDB 统计</p>
+    <header class="app-header">
+      <div class="app-title-wrap">
+        <div class="app-logo">B</div>
+        <div>
+          <h1>BOSS 求职副驾驶</h1>
+        </div>
+      </div>
+      <button type="button" id="btn-theme-toggle" class="theme-toggle-btn" title="切换深色/浅色外观">🌙 深色</button>
+    </header>
+    <p class="sub">本地运行 · LLM 匹配 · 拟人控频 · 本地隐私存储</p>
 
-    <nav class="tabs">
-      <button data-tab="run" class="tab active">运行</button>
-      <button data-tab="msg" class="tab">消息</button>
-      <button data-tab="policy" class="tab">策略</button>
-      <button data-tab="setup" class="tab">设置</button>
+    <nav class="tabs" role="tablist">
+      <button type="button" data-tab="run" class="tab active" role="tab">⚡️ 运行</button>
+      <button type="button" data-tab="msg" class="tab" role="tab">💬 消息</button>
+      <button type="button" data-tab="policy" class="tab" role="tab">🎯 策略</button>
+      <button type="button" data-tab="setup" class="tab" role="tab">⚙️ 设置</button>
     </nav>
 
     <div id="panel-run" class="tab-panel">
       <section>
-        <h2>运行</h2>
+        <h2>🚀 运行控制</h2>
         <div id="run-status" class="status">加载中…</div>
         <div class="btn-row">
           <button type="button" id="btn-start">开始</button>
@@ -134,7 +142,7 @@ function O() {
       </section>
 
       <section>
-        <h2>今日统计</h2>
+        <h2>📊 今日概览</h2>
         <div class="stats">
           <div class="stat"><b id="stat-seen">0</b><span>浏览</span></div>
           <div class="stat"><b id="stat-suitable">0</b><span>合适</span></div>
@@ -143,7 +151,7 @@ function O() {
           <div class="stat"><b id="stat-replies">0</b><span>回复</span></div>
           <div class="stat"><b id="stat-resumes">0</b><span>发简历</span></div>
         </div>
-        <p class="sub" style="margin-top:8px" id="stat-rate">近7日合适率：—</p>
+        <p class="sub" style="margin-top:10px" id="stat-rate">近7日合适率：—</p>
         <div class="rate-chart-wrap">
           <canvas id="rate-chart" width="320" height="120" aria-label="近7日合适率"></canvas>
         </div>
@@ -151,9 +159,11 @@ function O() {
           <button type="button" id="btn-report">打开数据看板</button>
           <button type="button" id="btn-retry-open" class="secondary">重试开聊失败</button>
           <button type="button" id="btn-export" class="secondary">导出 JSON</button>
+          <button type="button" id="btn-import" class="secondary">导入配置</button>
           <button type="button" id="btn-export-csv" class="secondary">导出 CSV</button>
-
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
         </div>
+        <p class="sub">导出含策略/画像/LLM/消息配置与分析数据；导入只恢复配置（API Key 若已脱敏则保留本机）。</p>
       </section>
 
       <section>
@@ -531,7 +541,33 @@ async function y(forceForm = false) {
   }
 }
 
+function updateThemeButton(theme?: string) {
+  const btn = $('btn-theme-toggle')
+  if (!btn) return
+  const current = document.documentElement.dataset.theme || theme || 'dark'
+  btn.innerHTML = current === 'dark' ? '🌙 深色' : '☀️ 浅色'
+}
+
 function C() {
+  $('btn-theme-toggle')?.addEventListener('click', () => {
+    const current = document.documentElement.dataset.theme || 'dark'
+    const next: UiThemePreference = current === 'dark' ? 'light' : 'dark'
+    try {
+      localStorage.setItem('boss.uiTheme', next)
+    } catch {
+      /* ignore */
+    }
+    applyDocumentTheme(next)
+    updateThemeButton(next)
+    const chart = $('rate-chart') as HTMLCanvasElement | null
+    if (chart && live.summary?.last7) {
+      try {
+        drawSuitableRateChart(chart, live.summary.last7)
+      } catch {
+        /* ignore */
+      }
+    }
+  })
   $('btn-refresh')?.addEventListener('click', () => void y())
   $('btn-reload-form')?.addEventListener('click', async () => {
     await k()
@@ -815,6 +851,52 @@ function C() {
       i('已导出 JSON 备份', 'ok')
     } catch (e) { i(e instanceof Error ? e.message : String(e), 'err') }
   })
+  $('btn-import')?.addEventListener('click', () => {
+    const f = $('import-file') as HTMLInputElement | null
+    if (f) {
+      f.value = ''
+      f.click()
+    }
+  })
+  $('import-file')?.addEventListener('change', async () => {
+    const input = $('import-file') as HTMLInputElement | null
+    const file = input?.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      let payload: unknown
+      try {
+        payload = JSON.parse(text)
+      } catch {
+        i('JSON 解析失败：请选择本扩展导出的备份文件', 'err')
+        return
+      }
+      const ok = window.confirm(
+        '将用备份覆盖本机策略 / LLM / 画像 / 消息助手配置（分析库 jobs/events 不导入）。API Key 若为 *** 则保留当前本机 Key。确定导入？',
+      )
+      if (!ok) {
+        i('已取消导入')
+        return
+      }
+      const e = await send({ type: 'import/config', payload })
+      if (e.type !== 'import/config') {
+        i(e.type === 'error' ? e.error : '导入失败', 'err')
+        return
+      }
+      if (!e.ok) {
+        i(e.error || '导入失败', 'err')
+        return
+      }
+      const warn = e.warnings?.length ? `；注意：${e.warnings.join('；')}` : ''
+      i(`${e.summary || '导入成功'}（${(e.imported || []).join('、') || '无'}）${warn}`, 'ok')
+      u = false
+      await y(true)
+    } catch (err) {
+      i(err instanceof Error ? err.message : String(err), 'err')
+    } finally {
+      if (input) input.value = ''
+    }
+  })
 
   // tabs
   const tabs = document.querySelectorAll('.tab')
@@ -1054,7 +1136,10 @@ function numField(
 async function K() {
   try {
     O()
-    applyDocumentTheme('dark')
+    const initialTheme: UiThemePreference =
+      (localStorage.getItem('boss.uiTheme') as UiThemePreference) || 'dark'
+    applyDocumentTheme(initialTheme)
+    updateThemeButton(initialTheme)
     const tab = (sessionStorage['boss.sidepanel.tab'] || savedTab || 'run') as
       | 'run'
       | 'msg'

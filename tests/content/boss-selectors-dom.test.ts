@@ -17,6 +17,10 @@ import {
   resolveClickTarget,
   isRoughlyVisible,
 } from '../../extension/content/adapter/boss/selectors'
+import {
+  clickOpenChat,
+  checkOpenChatProgress,
+} from '../../extension/content/adapter/boss/detail'
 
 // 注：jsdom 29 会拒绝带 `view` 的 MouseEvent/PointerEvent 构造（连其自身 realm 的
 // window 也不接受），因此不在此处测事件派发链路；改为直接回归「点击目标
@@ -89,6 +93,26 @@ describe('openChatBtn — 独立详情页应取 wrapper 内的 <a> 而非 wrappe
     )
     expect(el?.tagName).toBe('A')
     expect(el?.textContent).toBe('立即沟通')
+  })
+})
+
+describe('clickOpenChat — 后台 tab 零尺寸按钮仍应可点', () => {
+  beforeEach(() => {
+    // 模拟后台详情 tab：节点在 DOM 里，但 getBoundingClientRect 全 0
+    document.body.innerHTML = `
+      <div class="detail-box job-primary">
+        <div class="btn btn-startchat-wrap">
+          <a class="btn" ka="go_chat_done_x" id="chat-btn">立即沟通</a>
+        </div>
+      </div>`
+    // 故意不 markAllVisible：默认 jsdom rect 为 0 → isRoughlyVisible=false
+  })
+
+  it('候选不为 0，并能点击', () => {
+    const r = clickOpenChat()
+    expect(r.candidates).toBeGreaterThan(0)
+    expect(r.ok).toBe(true)
+    expect(r.clicked?.text).toMatch(/立即沟通/)
   })
 })
 
@@ -202,5 +226,85 @@ describe('sendResumeBtn — 不得因裸 .toolbar-btn 误点换电话/换微信'
 
   it('窄选择器在该结构下无命中，须由文案兑现兜底', () => {
     expect(document.querySelector(SELECTORS.sendResumeBtn)).toBeNull()
+  })
+})
+
+describe('checkOpenChatProgress — 校验开聊多维判定', () => {
+  it('当按钮文案变为「继续沟通」时，立即判为成功', () => {
+    document.body.innerHTML = `
+      <div class="job-detail-op">
+        <a class="op-btn op-btn-chat btn-continue">继续沟通</a>
+      </div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('success')
+    if (res.status === 'success') {
+      expect(res.via).toBe('button_state_changed')
+      expect(res.detail).toMatch(/继续沟通/)
+    }
+  })
+
+  it('当页面出现打招呼成功 Toast 时判为成功', () => {
+    document.body.innerHTML = `
+      <div class="boss-toast">已向Boss发送打招呼语</div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('success')
+    if (res.status === 'success') {
+      expect(res.via).toBe('toast_success')
+    }
+  })
+
+  it('当页面出现今日打招呼已达上限时返回明确错误并终止', () => {
+    document.body.innerHTML = `
+      <div class="toast-text">今日打招呼已达上限，请明天再来</div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('failed')
+    if (res.status === 'failed') {
+      expect(res.error).toMatch(/今日打招呼已达 BOSS 平台上限/)
+      expect(res.terminal).toBe(true)
+    }
+  })
+
+  it('当页面出现打招呼确认弹窗时自动点击确认', () => {
+    document.body.innerHTML = `
+      <div class="dialog-container">
+        <div class="dialog-title">与TA沟通</div>
+        <div class="dialog-footer">
+          <button class="btn-sure-v2">立即发送</button>
+        </div>
+      </div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('pending')
+  })
+
+  it('当页面存在普通安全中心页脚时不会误判为安全验证', () => {
+    document.body.innerHTML = `
+      <div class="job-detail-box">
+        <a class="btn btn-startchat">立即沟通</a>
+      </div>
+      <div class="footer">
+        <a href="#">网络安全与安全中心</a>
+        <a href="#">请先登录查看更多</a>
+      </div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('pending')
+  })
+
+  it('当页面出现真实可见的验证码时正确识别安全验证', () => {
+    document.body.innerHTML = `
+      <div class="geetest_panel geetest_holder">
+        <div class="geetest_slider"></div>
+      </div>`
+    markAllVisible()
+    const res = checkOpenChatProgress()
+    expect(res.status).toBe('failed')
+    if (res.status === 'failed') {
+      expect(res.error).toMatch(/安全验证/)
+      expect(res.terminal).toBe(true)
+    }
   })
 })

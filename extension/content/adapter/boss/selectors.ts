@@ -12,9 +12,12 @@ export const OPEN_CHAT_BTN_SELECTORS = [
   'a.op-btn-chat',
   '.job-detail-op a.op-btn-chat',
   '.btn-startchat-wrap a.btn',
+  '.btn-startchat-wrap a',
   '[class*="btn-startchat"] a',
   'a.btn-startchat',
+  'a.btn.btn-startchat',
   'button.btn-startchat',
+  'button.btn.btn-startchat',
   'a[ka^="go_chat"]',
   'a[ka^="cpc_job_list_chat"]',
   'a[ka="job-detail-chat"]',
@@ -22,6 +25,7 @@ export const OPEN_CHAT_BTN_SELECTORS = [
   'a.btn-outline-chat',
   // 兜底：wrapper 本体（依赖事件委托）
   '[class*="btn-startchat"]',
+  '.op-btn-chat',
 ]
 
 /**
@@ -389,46 +393,36 @@ export function isJavascriptHref(el: Element | null | undefined): boolean {
 
 type AnchorPatch = {
   a: HTMLAnchorElement
-  href: string | null
   target: string | null
 }
 
-/** 点击前临时改写卡片内 a：禁 javascript:、禁 _blank 连环开标签 */
+/** 点击前临时改写卡片内 a：仅将 _blank 转为 _self，绝对保留 href 属性 */
 function patchAnchorsForSafeClick(root: HTMLElement): AnchorPatch[] {
   const saved: AnchorPatch[] = []
   const list: HTMLAnchorElement[] = []
   if (root.tagName === 'A') list.push(root as HTMLAnchorElement)
   const parentA = root.closest('a') as HTMLAnchorElement | null
   if (parentA) list.push(parentA)
-  list.push(...Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href], a[target]')))
+  list.push(...Array.from(root.querySelectorAll<HTMLAnchorElement>('a[target]')))
 
   const seen = new Set<HTMLAnchorElement>()
   for (const a of list) {
     if (seen.has(a)) continue
     seen.add(a)
-    const href = a.getAttribute('href')
     const target = a.getAttribute('target')
-    let changed = false
 
-    // 去掉 javascript:：页面 click 监听仍在，但不会走被 CSP 拦截的导航
-    if (href && /^\s*javascript:/i.test(href)) {
-      a.removeAttribute('href')
-      changed = true
-    }
-    // 强制同标签：避免 BOSS 详情 a[target=_blank] 被事件路径打开一堆标签
+    // 强制同标签：避免 BOSS 详情 a[target=_blank] 被打开一堆新标签
+    // 注意：绝对不能 removeAttribute('href')，否则 <a> 会丧失超链接语义与 jQuery/React 事件委托匹配！
     if (target && /_blank/i.test(target)) {
+      saved.push({ a, target })
       a.setAttribute('target', '_self')
-      changed = true
     }
-    if (changed) saved.push({ a, href, target })
   }
   return saved
 }
 
 function restoreAnchors(saved: AnchorPatch[]) {
-  for (const { a, href, target } of saved) {
-    if (href == null) a.removeAttribute('href')
-    else a.setAttribute('href', href)
+  for (const { a, target } of saved) {
     if (target == null) a.removeAttribute('target')
     else a.setAttribute('target', target)
   }
@@ -445,18 +439,7 @@ export const CARD_ROOT_SELECTOR = [
 ].join(',')
 
 /**
- * 安全点击（MV3）：
- * - 禁止对 javascript: 链接调用 element.click()（会触发 CSP 报错）
- * - 仅派发鼠标事件，不调用 HTMLElement.click()
- * - `resolveCard` 仅供列表卡场景显式开启：把点击上提到整卡
- *
- * 历史缺陷：此函数曾**无条件**把目标重定向到 job-card 祖先。任何位于
- * 卡片/抽屉内的按钮（如「立即沟通」）点击都会被改投到整卡，退化为重开详情，
- * 且仍返回 true（假成功）。现改为 opt-in。
- */
-/**
- * 决定实际接收点击的元素—— 缺陷就出在这一判定上，故抽为纯函数以便回归。
- *
+ * 决定实际接收点击的元素
  * 仅当 resolveCard 为真时才上提到职位卡根节点。
  */
 export function resolveClickTarget(
@@ -474,29 +457,109 @@ export function safeClick(
   if (!el || !(el instanceof HTMLElement)) return false
 
   const target = resolveClickTarget(el, opts)
+
+  try {
+    target.scrollIntoView({ block: 'center', inline: 'nearest' })
+  } catch {
+    /* ignore */
+  }
+
   const saved = patchAnchorsForSafeClick(target)
 
   try {
-    const opts: MouseEventInit = {
+    let cx = 10
+    let cy = 10
+    try {
+      const rect = target.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        cx = Math.round(rect.left + rect.width / 2)
+        cy = Math.round(rect.top + rect.height / 2)
+      }
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      target.focus()
+    } catch {
+      /* ignore */
+    }
+
+    const mouseBase: MouseEventInit = {
       bubbles: true,
       cancelable: true,
-      view: window,
+      composed: true,
+      clientX: cx,
+      clientY: cy,
+      screenX: cx + (typeof window !== 'undefined' ? window.screenX || 0 : 0),
+      screenY: cy + (typeof window !== 'undefined' ? window.screenY || 0 : 0),
       button: 0,
-      buttons: 1,
-      clientX: 8,
-      clientY: 8,
     }
-    target.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerId: 1, pointerType: 'mouse' }))
-    target.dispatchEvent(new MouseEvent('mousedown', opts))
-    target.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerId: 1, pointerType: 'mouse' }))
-    target.dispatchEvent(new MouseEvent('mouseup', opts))
-    target.dispatchEvent(new MouseEvent('click', opts))
-    // 故意不调用 target.click()：原生 click() 对 <a href="javascript:"> 会触发导航并被扩展 CSP 拦截
+
+    // 1. Pointer over & enter
+    if (typeof PointerEvent !== 'undefined') {
+      try {
+        target.dispatchEvent(new PointerEvent('pointerover', { ...mouseBase, pointerId: 1, pointerType: 'mouse' }))
+        target.dispatchEvent(new PointerEvent('pointerenter', { ...mouseBase, bubbles: false, pointerId: 1, pointerType: 'mouse' }))
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 2. Mouse over & enter
+    try {
+      target.dispatchEvent(new MouseEvent('mouseover', mouseBase))
+      target.dispatchEvent(new MouseEvent('mouseenter', { ...mouseBase, bubbles: false }))
+    } catch {
+      /* ignore */
+    }
+
+    // 3. Pointer down & Mouse down (buttons: 1)
+    if (typeof PointerEvent !== 'undefined') {
+      try {
+        target.dispatchEvent(new PointerEvent('pointerdown', { ...mouseBase, buttons: 1, isPrimary: true, pointerId: 1, pointerType: 'mouse' }))
+      } catch {
+        /* ignore */
+      }
+    }
+    target.dispatchEvent(new MouseEvent('mousedown', { ...mouseBase, buttons: 1 }))
+
+    // 4. Pointer up & Mouse up (buttons: 0)
+    if (typeof PointerEvent !== 'undefined') {
+      try {
+        target.dispatchEvent(new PointerEvent('pointerup', { ...mouseBase, buttons: 0, isPrimary: true, pointerId: 1, pointerType: 'mouse' }))
+      } catch {
+        /* ignore */
+      }
+    }
+    target.dispatchEvent(new MouseEvent('mouseup', { ...mouseBase, buttons: 0 }))
+
+    // 5. Click event (buttons: 0)
+    target.dispatchEvent(new MouseEvent('click', { ...mouseBase, buttons: 0 }))
+
+    // 6. 向可能存在的内部 child 派发点击，满足内层委托
+    const child = target.querySelector('span, i, b, div, p')
+    if (child && child instanceof HTMLElement) {
+      try {
+        child.dispatchEvent(new MouseEvent('click', { ...mouseBase, buttons: 0 }))
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 7. 原生 .click() 触发
+    try {
+      if (typeof target.click === 'function') {
+        target.click()
+      }
+    } catch {
+      /* ignore if blocked */
+    }
+
     return true
   } catch {
     return false
   } finally {
-    // 延迟恢复：BOSS 可能异步读 target；过早恢复会仍开 _blank
     setTimeout(() => restoreAnchors(saved), 500)
   }
 }
@@ -516,7 +579,9 @@ export function clickExpandButtons(root: ParentNode = document): number {
     if (safeClick(n)) clicked++
   }
   return clicked
-}export function isElementDisabled(el: Element | null | undefined): boolean {
+}
+
+export function isElementDisabled(el: Element | null | undefined): boolean {
   if (!el || !(el instanceof HTMLElement)) return false
   const tag = el.tagName.toLowerCase()
   if (tag === 'button' || tag === 'a') {

@@ -70,6 +70,8 @@ export type RequestMessage =
   | { type: 'analytics/summary' }
   | { type: 'events/list'; limit?: number }
   | { type: 'export/all' }
+  /** 从导出 JSON 恢复配置（policy/llm/profile/messageAssist） */
+  | { type: 'import/config'; payload: unknown }
   | { type: 'content/exec'; tabId?: number; command: ContentCommand }
   | { type: 'messageAssist/get' }
   | { type: 'messageAssist/set'; config: MessageAssistConfig }
@@ -135,6 +137,14 @@ export type ResponseMessage =
   | { type: 'analytics/summary'; summary: AnalyticsSummary }
   | { type: 'events/list'; events: EventRecord[] }
   | { type: 'export/all'; payload: unknown }
+  | {
+      type: 'import/config'
+      ok: true
+      imported: string[]
+      warnings: string[]
+      summary: string
+    }
+  | { type: 'import/config'; ok: false; error: string }
   | { type: 'content/exec'; result: ContentResult }
   | { type: 'profile/sync'; profile: Profile }
   | {

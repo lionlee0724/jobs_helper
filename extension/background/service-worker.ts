@@ -1,5 +1,6 @@
 import type { RequestMessage } from '../shared/messages'
 import { maskKvForExport } from '../shared/export-mask'
+import { mergeLlmForImport, parseConfigImport } from '../shared/config-import'
 import * as kv from '../data/kv'
 import { listRecentEvents } from '../data/repos/events'
 import { listAllJobs } from '../data/repos/jobs'
@@ -285,6 +286,57 @@ async function handleMessage(msg: RequestMessage) {
         kv: maskKvForExport(await kv.getAllKv()),
       }
       return { type: 'export/all', payload }
+    }
+    case 'import/config': {
+      const parsed = parseConfigImport(msg.payload)
+      if (!parsed.ok) {
+        return { type: 'import/config', ok: false, error: parsed.error }
+      }
+      const imported: string[] = []
+      const warnings = [...parsed.warnings]
+      const { config } = parsed
+      if (config.policy) {
+        await kv.setPolicy(config.policy)
+        imported.push('policy')
+      }
+      if (config.llm) {
+        const current = await kv.getLlmConfig()
+        const merged = mergeLlmForImport(config.llm, current)
+        if (merged) {
+          await kv.setLlmConfig(merged)
+          imported.push('llm')
+        }
+      }
+      if (config.profile !== undefined) {
+        if (config.profile) await kv.setProfile(config.profile)
+        // profile: null 表示清空——当前无 remove API，写入空摘要占位
+        else {
+          await kv.setProfile({
+            syncedAt: Date.now(),
+            summary: '',
+            skills: [],
+          })
+        }
+        imported.push('profile')
+      }
+      if (config.messageAssist) {
+        await kv.setMessageAssist(config.messageAssist)
+        imported.push('messageAssist')
+      }
+      if (!imported.length) {
+        return {
+          type: 'import/config',
+          ok: false,
+          error: '没有可写入的配置项',
+        }
+      }
+      return {
+        type: 'import/config',
+        ok: true,
+        imported,
+        warnings,
+        summary: parsed.summary,
+      }
     }
     case 'content/exec': {
       const tabId = msg.tabId ?? (await ensureWorkerTab())

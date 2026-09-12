@@ -51,6 +51,7 @@ import {
   detectAndPauseIfAuthLost,
   isContentBridgeDead,
 } from './run-guards'
+import { isChatUrl, isJobDetailUrl } from '../shared/boss-urls'
 import {
   ensureOnListPage,
   execOnWorker,
@@ -569,6 +570,11 @@ export async function processCardInEphemeralTab(opts: {
       }
 
       // R5：同 tab open_chat — 最多 3 次（含退避），仍失败才 markFailed
+      //
+      // 实页故障（2026-08）：匹配 LLM + 间隔等待后，详情 tab 可能
+      // 1) 仍在后台未布局 → 「立即沟通」getBoundingClientRect=0 → 候选=0
+      // 2) 被站内重定向到 /web/geek/chat → 详情按钮消失，error 里 href 变成 chat
+      // 处理：开聊前聚焦 tab；已在 chat → 记成功；离开详情 → 拉回 href 再点。
       await setPhase('open_chat', gen)
       const timing = humanTiming(policy)
       const maxOpenAttempts = 3
@@ -576,6 +582,16 @@ export async function processCardInEphemeralTab(opts: {
         ok: false,
         error: '未尝试',
       }
+
+      // 后台 tab 常不渲染操作按钮：开聊前激活一次（用户可见闪一下可接受）
+      try {
+        await chrome.tabs.update(detailTabId, { active: true })
+        await sleep(600)
+        await waitContentReady(detailTabId, 5_000, gen)
+      } catch {
+        /* tab 可能已关 */
+      }
+
       for (let attempt = 0; attempt < maxOpenAttempts; attempt++) {
         if (!(await isStillRunning(gen))) return { kind: 'continue' }
         if (attempt > 0) {
@@ -583,8 +599,57 @@ export async function processCardInEphemeralTab(opts: {
           const okWait = await sleepWhileRunning(delay, gen)
           if (!okWait) return { kind: 'continue' }
         }
+
+        let tabUrl = ''
+        try {
+          const t = await chrome.tabs.get(detailTabId)
+          tabUrl = t.url || ''
+        } catch {
+          chat = { ok: false, error: '详情标签已关闭' }
+          break
+        }
+
+        // 已在聊天页：点「立即沟通」无意义，按开聊成功
+        if (isChatUrl(tabUrl)) {
+          chat = {
+            ok: true,
+            data: { via: 'tab_already_chat', href: tabUrl.slice(0, 160) },
+          }
+          break
+        }
+
+        // 离开详情（列表/其它）→ 拉回本岗详情再点
+        if (!isJobDetailUrl(tabUrl) && href) {
+          try {
+            await chrome.tabs.update(detailTabId, { url: href, active: true })
+            await waitTabComplete(detailTabId, 15_000)
+            await sleep(800)
+            await waitContentReady(detailTabId, 8_000, gen)
+          } catch (e) {
+            chat = {
+              ok: false,
+              error: `无法回到详情页：${e instanceof Error ? e.message : String(e)}`,
+            }
+            continue
+          }
+        }
+
         chat = await sendToTabOnce(detailTabId, { op: 'open_chat', timing })
         if (chat.ok) break
+
+        // 点击失败后再看是否其实已跳到 chat（竞态）
+        try {
+          const t2 = await chrome.tabs.get(detailTabId)
+          if (isChatUrl(t2.url)) {
+            chat = {
+              ok: true,
+              data: { via: 'navigated_after_fail_check', href: (t2.url || '').slice(0, 160) },
+            }
+            break
+          }
+        } catch {
+          /* ignore */
+        }
       }
       if (!chat.ok) {
         const err = chat.error || 'open_chat 失败'
@@ -600,6 +665,10 @@ export async function processCardInEphemeralTab(opts: {
             suitable: true,
           },
         })
+        if (/今日打招呼已达 BOSS 平台上限|达.*上限/i.test(err)) {
+          await stopRun(err)
+          return { kind: 'paused' }
+        }
         return { kind: 'continue' }
       }
       await sleep(800)

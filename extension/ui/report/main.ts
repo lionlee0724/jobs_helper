@@ -8,6 +8,7 @@ import {
 import { isOpenChatRetryCandidate } from '../../domain/open-chat-retry'
 import { buildExportCsv, downloadTextFile, type ExportAllPayload } from '../../shared/csv-export'
 import { drawSuitableRateChart } from '../shared/suitable-rate-chart?inline-report'
+import { applyDocumentTheme, type UiThemePreference } from '../shared/theme'
 
 type ExportPayload = {
   exportedAt?: number
@@ -314,6 +315,26 @@ async function exportCsv() {
   }
 }
 
+function updateThemeBtn(theme?: string) {
+  const btn = document.getElementById('btn-theme-toggle')
+  if (!btn) return
+  const current = document.documentElement.dataset.theme || theme || 'dark'
+  btn.innerHTML = current === 'dark' ? '🌙 深色' : '☀️ 浅色'
+}
+
+document.getElementById('btn-theme-toggle')?.addEventListener('click', () => {
+  const current = document.documentElement.dataset.theme || 'dark'
+  const next: UiThemePreference = current === 'dark' ? 'light' : 'dark'
+  try {
+    localStorage.setItem('boss.uiTheme', next)
+  } catch {
+    /* ignore */
+  }
+  applyDocumentTheme(next)
+  updateThemeBtn(next)
+  paintRateChart()
+})
+
 document.getElementById('btn-refresh')?.addEventListener('click', () => {
   void load()
 })
@@ -325,5 +346,10 @@ document.getElementById('btn-export-csv')?.addEventListener('click', () => {
 })
 document.getElementById('filter-outcome')?.addEventListener('change', () => paintJobs())
 document.getElementById('filter-q')?.addEventListener('input', () => paintJobs())
+
+const initTheme: UiThemePreference =
+  (localStorage.getItem('boss.uiTheme') as UiThemePreference) || 'dark'
+applyDocumentTheme(initTheme)
+updateThemeBtn(initTheme)
 
 void load()

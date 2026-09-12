@@ -9,11 +9,15 @@
   <body>
     <div id="app">
       <header class="top">
-        <div>
-          <h1>投递记录与统计</h1>
-          <p class="sub">数据仅存本机 · 无需导出 JSON 即可查看</p>
+        <div class="top-title-wrap">
+          <div class="top-logo">📊</div>
+          <div>
+            <h1>投递记录与统计看板</h1>
+            <p class="sub">本地轻量存储 · 实时多维分析 · 全量隐私保护</p>
+          </div>
         </div>
         <div class="top-actions">
+          <button type="button" id="btn-theme-toggle" class="ghost" title="切换深色/浅色外观">🌙 深色</button>
           <button type="button" id="btn-refresh">刷新</button>
           <button type="button" id="btn-export-csv" class="ghost">导出 CSV</button>
           <button type="button" id="btn-export" class="ghost">导出 JSON 备份</button>
